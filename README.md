@@ -1,5 +1,7 @@
 # MSCS532 Assignment 6 - Medians, Order Statistics and Elementary Data Structures
 
+**Student:** Hareesh Devulapalli | **Instructor:** Michael Solomon
+
 Code for assignment 6. There are two parts:
 
 1. **Selection** - finding the k-th smallest element in linear time, two ways:

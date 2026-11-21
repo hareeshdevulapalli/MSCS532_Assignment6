@@ -2,6 +2,10 @@
 
 MSCS532 - Algorithms and Data Structures
 
+**Student:** Hareesh Devulapalli<br>
+**Instructor:** Michael Solomon<br>
+**Date:** November 20, 2026
+
 All measurements were taken on my Apple Silicon MacBook with Python 3.13.9. The raw output is in
 [`results/log.txt`](results/log.txt) and the numbers in the tables below are copied from there.
 Running `python3 benchmark.py` again will give the same comparison counts (everything random is
