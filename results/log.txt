@@ -1,0 +1,149 @@
+python 3.13.9, darwin, seed=77, full run
+
+A1: finding the median, time and comparisons vs n
+-------------------------------------------------
+
+[random]
+       n           MoM  cmp/n   Quickselect  cmp/n    sorted()  MoM/QS
+    1000      276.8 us   4.67      177.7 us   4.73     39.0 us  1.56x
+    2000       1.08 ms   9.27      232.3 us   3.89    100.3 us  4.65x
+    5000       2.81 ms   9.62      719.0 us   5.23    259.4 us  3.90x
+   10000       5.71 ms   9.82       1.60 ms   5.18    669.5 us  3.57x
+   20000      13.21 ms   9.95       3.30 ms   5.38     1.49 ms  4.00x
+   50000      31.05 ms   9.91       7.91 ms   5.18     4.06 ms  3.93x
+  100000      61.73 ms   9.99      19.24 ms   5.49     8.69 ms  3.21x
+  200000     147.89 ms  10.05      33.68 ms   4.42    22.40 ms  4.39x
+
+[sorted]
+       n           MoM  cmp/n   Quickselect  cmp/n    sorted()  MoM/QS
+    1000      453.4 us   7.79      161.3 us   5.35      3.1 us  2.81x
+    2000      898.0 us   7.92      485.1 us   5.39      8.5 us  1.85x
+    5000       2.37 ms   8.35      770.7 us   5.14     19.9 us  3.07x
+   10000       4.69 ms   8.43       1.95 ms   5.14     35.6 us  2.41x
+   20000       9.51 ms   8.57       3.12 ms   5.16     71.7 us  3.05x
+   50000      26.31 ms   8.71      12.14 ms   5.65    179.9 us  2.17x
+  100000      63.09 ms   8.77      20.64 ms   5.65    355.4 us  3.06x
+  200000     124.48 ms   8.83      42.05 ms   5.65    695.8 us  2.96x
+
+[reversed]
+       n           MoM  cmp/n   Quickselect  cmp/n    sorted()  MoM/QS
+    1000      533.0 us   8.84      172.9 us   5.80      3.7 us  3.08x
+    2000       1.07 ms   9.05      352.2 us   6.01      7.8 us  3.04x
+    5000       2.71 ms   9.27      893.3 us   5.03     19.8 us  3.04x
+   10000       7.82 ms   9.37       1.65 ms   5.05     31.1 us  4.74x
+   20000      13.55 ms   9.43       2.80 ms   5.06     80.0 us  4.84x
+   50000      32.47 ms   9.57      16.08 ms   6.49    185.9 us  2.02x
+  100000      68.56 ms   9.56      26.99 ms   6.49    320.6 us  2.54x
+  200000     139.15 ms   9.66      54.07 ms   6.49    837.4 us  2.57x
+
+[few_values]
+       n           MoM  cmp/n   Quickselect  cmp/n    sorted()  MoM/QS
+    1000      360.3 us   6.63       94.7 us   3.19     46.2 us  3.81x
+    2000      721.2 us   6.61      161.4 us   2.68     65.4 us  4.47x
+    5000       1.07 ms   3.83      640.0 us   3.97    222.6 us  1.67x
+   10000       2.11 ms   3.85       1.24 ms   3.66    396.7 us  1.69x
+   20000      10.63 ms   7.36       3.49 ms   4.64    794.1 us  3.04x
+   50000      13.52 ms   3.72       8.16 ms   4.25     1.96 ms  1.66x
+  100000      37.60 ms   3.72      22.87 ms   3.99     4.36 ms  1.64x
+  200000      61.41 ms   3.86      30.07 ms   4.02    10.23 ms  2.04x
+
+A2: 500 runs at n=10000 (new random list each run)
+--------------------------------------------------
+             cmp/n avg     sd    min    max     touched/n    max
+MoM              9.696  0.644  4.918 10.133         3.145  3.274
+Quickselect      5.027  1.567  2.067 12.991         3.377  8.095
+expected touched/n for quickselect at the median: 2+2ln2 = 3.386
+
+A3: work vs k (n=50000, 100 quickselect runs per k)
+---------------------------------------------------
+      k    k/n     QS avg    min    max  theory         MoM  MoM cmp
+      1  0.000      2.011  1.002  4.732   2.000       3.192    9.909
+    500  0.010      2.091  1.031  3.965   2.111       3.196    9.919
+   2500  0.050      2.360  1.064  5.408   2.396       3.198    9.919
+   5000  0.100      2.637  1.122  5.469   2.649       3.206    9.945
+  10000  0.200      3.262  1.531  7.633   2.999       3.212    9.950
+  15000  0.300      3.107  1.447  6.290   3.220       3.297   10.136
+  20000  0.400      3.532  1.734  6.797   3.344       3.299   10.078
+  25000  0.500      3.222  1.606  5.911   3.385       3.234    9.852
+  30000  0.600      3.323  1.571  5.355   3.344       3.255    9.900
+  35000  0.700      3.075  1.435  6.230   3.220       3.273    9.938
+  40000  0.800      2.930  1.301  5.140   2.999       3.259    9.878
+  45000  0.900      2.700  1.199  7.508   2.649       3.251    9.841
+  47500  0.950      2.328  1.118  5.083   2.396       3.253    9.837
+  49500  0.990      2.085  1.057  4.709   2.111       3.249    9.820
+  50000  1.000      1.966  1.010  3.845   2.000       3.249    9.820
+
+A4: median of a sorted list with different pivot rules
+------------------------------------------------------
+     n   last pivot  touch/n  Quickselect  touch/n          MoM  touch/n
+   250     999.0 us     94.5      53.1 us     4.11      97.5 us     2.65
+   500      4.11 ms    188.2     103.5 us     4.14     222.0 us     2.83
+  1000     17.31 ms    375.8     197.2 us     4.09     450.8 us     3.00
+  2000     71.16 ms    750.8     406.6 us     4.12     899.1 us     3.08
+  4000    287.40 ms   1500.8     744.6 us     3.99      1.85 ms     3.19
+
+B1: stack, n push then n pop
+----------------------------
+       n                  ArrStack                 NodeStack           list (built-in)
+    1000     112.8 us    113 ns/op     123.3 us    123 ns/op      22.8 us     23 ns/op
+    2000     230.3 us    115 ns/op     247.5 us    124 ns/op      44.7 us     22 ns/op
+    5000     637.2 us    127 ns/op     624.7 us    125 ns/op     110.8 us     22 ns/op
+   10000      1.25 ms    125 ns/op      1.24 ms    124 ns/op     221.7 us     22 ns/op
+   20000      2.55 ms    127 ns/op      2.49 ms    124 ns/op     448.0 us     22 ns/op
+   50000      6.05 ms    121 ns/op      6.34 ms    127 ns/op      1.13 ms     23 ns/op
+  100000     12.12 ms    121 ns/op     13.03 ms    130 ns/op      2.36 ms     24 ns/op
+
+B2: queue, n enqueue then n dequeue
+-----------------------------------
+       n                 RingQueue                 NodeQueue               list.pop(0)          deque (built-in)
+    1000     192.4 us    192 ns/op     137.9 us    138 ns/op      66.0 us     66 ns/op      22.6 us     23 ns/op
+    2000     388.8 us    194 ns/op     264.9 us    132 ns/op     197.2 us     99 ns/op      46.7 us     23 ns/op
+    5000      1.06 ms    212 ns/op     671.6 us    134 ns/op      1.02 ms    204 ns/op     121.4 us     24 ns/op
+   10000      2.14 ms    214 ns/op      1.35 ms    135 ns/op      3.92 ms    392 ns/op     229.1 us     23 ns/op
+   20000      4.30 ms    215 ns/op      2.70 ms    135 ns/op     18.36 ms    918 ns/op     480.7 us     24 ns/op
+   50000     10.44 ms    209 ns/op      6.85 ms    137 ns/op    148.59 ms   2972 ns/op      1.16 ms     23 ns/op
+  100000     20.54 ms    205 ns/op     13.83 ms    138 ns/op    610.41 ms   6104 ns/op      2.42 ms     24 ns/op
+
+B3: n inserts at the front
+--------------------------
+       n            ResizableArray                LinkedList            list.insert(0)
+     250     295.8 us   1183 ns/op      21.5 us     86 ns/op       8.1 us     32 ns/op
+     500      1.36 ms   2726 ns/op      45.5 us     91 ns/op      20.1 us     40 ns/op
+    1000      6.50 ms   6499 ns/op     100.7 us    101 ns/op      64.4 us     64 ns/op
+    2000     28.69 ms  14344 ns/op     193.3 us     97 ns/op     212.7 us    106 ns/op
+    4000    123.23 ms  30808 ns/op     390.2 us     98 ns/op     792.8 us    198 ns/op
+    8000    507.30 ms  63413 ns/op     782.2 us     98 ns/op      3.07 ms    384 ns/op
+
+B4: n lookups at random indexes
+-------------------------------
+       n            ResizableArray                LinkedList           list (built-in)
+     250      15.9 us     64 ns/op     172.9 us    692 ns/op       2.3 us      9 ns/op
+     500      34.7 us     69 ns/op     799.4 us   1599 ns/op       5.2 us     10 ns/op
+    1000      65.8 us     66 ns/op      3.71 ms   3706 ns/op       8.7 us      9 ns/op
+    2000     132.7 us     66 ns/op     18.31 ms   9154 ns/op      15.2 us      8 ns/op
+    4000     267.2 us     67 ns/op     72.50 ms  18126 ns/op      31.2 us      8 ns/op
+    8000     542.0 us     68 ns/op    284.86 ms  35608 ns/op      53.4 us      7 ns/op
+
+B5: n appends at the end
+------------------------
+       n            ResizableArray                LinkedList           list (built-in)
+    1000      60.8 us     61 ns/op      96.8 us     97 ns/op      12.3 us     12 ns/op
+    2000     121.9 us     61 ns/op     201.0 us    101 ns/op      27.7 us     14 ns/op
+    5000     348.6 us     70 ns/op     494.3 us     99 ns/op      61.6 us     12 ns/op
+   10000     686.6 us     69 ns/op      1.01 ms    101 ns/op     122.0 us     12 ns/op
+   20000      1.41 ms     70 ns/op      2.01 ms    101 ns/op     247.5 us     12 ns/op
+   50000      3.25 ms     65 ns/op      5.11 ms    102 ns/op     645.1 us     13 ns/op
+  100000      6.76 ms     68 ns/op     10.52 ms    105 ns/op      1.41 ms     14 ns/op
+
+B6: memory per item at n=100000 (every slot holds None, so only the structure itself is counted)
+------------------------------------------------------------------------------------------------
+ResizableArray        1024.3 KiB    10.5 bytes/item
+ArrStack              1024.3 KiB    10.5 bytes/item
+RingQueue             1024.3 KiB    10.5 bytes/item
+LinkedList            4687.7 KiB    48.0 bytes/item
+NodeStack             4687.7 KiB    48.0 bytes/item
+NodeQueue             4687.7 KiB    48.0 bytes/item
+list (built-in)        782.2 KiB     8.0 bytes/item
+deque (built-in)       806.1 KiB     8.3 bytes/item
+
+done in 33.8 s

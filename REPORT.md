@@ -1,624 +1,613 @@
-# Medians and Order Statistics & Elementary Data Structures
+# Assignment 6 Report: Selection Algorithms and Elementary Data Structures
 
-MSCS532 Assignment 6
+MSCS532 - Algorithms and Data Structures
 
-I ran everything with Python 3.13.9 on an Apple Silicon Mac. Every number in this report comes
-from [`results/benchmark_output.txt`](results/benchmark_output.txt), which you can regenerate
-with `python3 run_benchmarks.py` (about 35 seconds). Inputs and random pivots use fixed seeds
-(532 and seeds derived from it), so the comparison counts come out exactly the same every run.
-Timings move by a few percent from run to run.
+All measurements were taken on my Apple Silicon MacBook with Python 3.13.9. The raw output is in
+[`results/log.txt`](results/log.txt) and the numbers in the tables below are copied from there.
+Running `python3 benchmark.py` again will give the same comparison counts (everything random is
+seeded, seed = 77) but the times will be a little different each run.
 
-## Contents
+**Contents**
 
-**Part 1: Selection algorithms**
-
-1. [Implementation](#1-implementation)
-2. [Performance analysis](#2-performance-analysis)
-3. [Empirical analysis](#3-empirical-analysis)
-
-**Part 2: Elementary data structures**
-
-4. [Implementation](#4-implementation)
-5. [Time complexity of each operation](#5-time-complexity-of-each-operation)
-6. [Arrays vs linked lists for stacks and queues](#6-arrays-vs-linked-lists-for-stacks-and-queues)
-7. [Comparing structures in specific scenarios](#7-comparing-structures-in-specific-scenarios)
-8. [Practical applications](#8-practical-applications)
-
-9. [Conclusions](#9-conclusions)
-10. [References](#10-references)
+- Part 1: Selection
+  - 1. How I implemented it
+  - 2. Time and space analysis
+  - 3. Experiments
+- Part 2: Data structures
+  - 4. How I implemented them
+  - 5. Complexity of the operations
+  - 6. Arrays vs linked lists for stacks and queues
+  - 7. Other scenarios
+  - 8. Where these get used in practice
+- 9. Conclusion
+- 10. References
 
 ---
 
-# Part 1: Selection algorithms
+## Part 1: Selection
 
-The *k*-th order statistic of a list is the item that would sit at position *k* if the list
-were sorted (*k* = 1 is the minimum, *k* = *n* the maximum, *k* = ⌈*n*/2⌉ the lower median).
-Sorting first and indexing gives the answer in O(*n* log *n*). Both algorithms below do it in
-O(*n*): one guarantees it, the other gets it on average.
+The goal is to find the k-th smallest element (the k-th order statistic) of an unsorted list.
+The obvious way is to sort and then index, which is O(n log n). Both algorithms below get it down
+to O(n). Median of medians guarantees it, quickselect gets it on average.
 
-## 1. Implementation
+### 1. How I implemented it
 
-All the code is in [`selection.py`](selection.py). I followed SELECT and RANDOMIZED-SELECT from
-Cormen et al. (2022, ch. 9). Like the book, *k* is 1-based. Internally everything is 0-based
-with inclusive ranges `a[lo..hi]`.
+Everything is in [`selection.py`](selection.py). I based it on SELECT and RANDOMIZED-SELECT from
+CLRS chapter 9. k starts at 1 like in the book (k = 1 is the minimum), but the code itself uses
+0-based indexes and inclusive ranges `[left, right]`.
 
-| Function | Pivot | Guarantee |
+| function | how the pivot is picked | running time |
 |---|---|---|
-| `deterministic_select(items, k)` | median of the medians of groups of 5 | O(*n*) worst case |
-| `randomized_select(items, k, rng=None)` | a uniformly random item of the range | O(*n*) expected, O(*n*²) worst case |
-| `fixed_pivot_select(items, k)` | always the last item (baseline only) | O(*n*²) on sorted input |
-| `median(items, method=...)` | lower median via either of the first two | |
+| `select_mom(seq, k)` | median of the medians of groups of 5 | O(n) worst case |
+| `select_random(seq, k)` | random element of the current range | O(n) expected, O(n²) worst |
+| `select_last_pivot(seq, k)` | always the last element (only for comparison) | O(n²) on sorted input |
+| `median(seq)` | calls one of the first two with k = ceil(n/2) | |
 
-All three share one partition function and accept an optional `SelectTracker`, which counts
-comparisons, items examined, partition passes and recursion depth.
+All of them can take a `WorkLog` object which counts comparisons, how many elements the
+partition step touched, the number of passes, and the recursion depth. I used it to get
+machine-independent numbers for the experiments.
 
-### 1.1 Shared building block: three-way partition
+#### 1.1 Partitioning into three parts
+
+The partition is the same for all three functions:
 
 ```python
-def three_way_partition(a, lo, hi, pivot):
-    lt, i, gt = lo, lo, hi
-    while i <= gt:
-        value = a[i]
-        if value < pivot:
-            a[lt], a[i] = value, a[lt]; lt += 1; i += 1
-        elif pivot < value:
-            a[i], a[gt] = a[gt], value; gt -= 1
+def partition3(arr, left, right, pivot):
+    lo_ptr = scan = left
+    hi_ptr = right
+    while scan <= hi_ptr:
+        cur = arr[scan]
+        if cur < pivot:
+            arr[lo_ptr], arr[scan] = cur, arr[lo_ptr]
+            lo_ptr += 1; scan += 1
+        elif pivot < cur:
+            arr[scan], arr[hi_ptr] = arr[hi_ptr], cur
+            hi_ptr -= 1
         else:
-            i += 1
-    m = hi - lo + 1
-    return lt, gt, 2 * m - (lt - lo)
+            scan += 1
+    size = right - left + 1
+    return lo_ptr, hi_ptr, 2 * size - (lo_ptr - left)
 ```
 
-This is Dijkstra's "Dutch national flag" partition. Afterwards `a[lo..lt-1] < pivot`,
-`a[lt..gt] == pivot`, and `a[gt+1..hi] > pivot`. Every item is looked at exactly once, so one
-pass is Θ(*m*) time and O(1) extra space. An item below the pivot costs one comparison and any
-other item costs two, which means the exact count is `2m − (number below)`. I compute that at
-the end, so the loop needs no counter.
+This is the "Dutch national flag" partition. At the end, everything before `lo_ptr` is smaller
+than the pivot, `arr[lo_ptr..hi_ptr]` equals the pivot, and everything after `hi_ptr` is bigger.
+It's one pass with O(1) extra space. The comparison count can be computed at the end: a smaller
+element needs one `<` check and anything else needs two, so it's `2*size - (number smaller)`.
 
-I partition three ways instead of the textbook's two for two reasons, and both are about
-**duplicates**:
+I went with three parts instead of the textbook's two mainly because of duplicates:
 
-1. **Early exit.** If position *k* lands in the `==` block, that block is the answer and we
-   stop. With only a few distinct values this finishes after one or two passes (section 3.3).
-2. **The worst-case proof needs it.** The median-of-medians guarantee says at least ~3*n*/10
-   items are ≥ the pivot and at least ~3*n*/10 are ≤ it. With a two-way partition, items equal
-   to the pivot all go to one side. On a list of *n* copies of the same value that side has
-   *n* − 1 items, and the "guaranteed linear" algorithm turns quadratic. With three-way
-   partitioning, the copies go into the middle block, which is never recursed on. The bound in
-   section 2.1 then holds for any input.
+- If k lands inside the "equal" block, that value is the answer and the loop can stop. With
+  only a few distinct values this ends the search very quickly (see 3.3).
+- The worst-case proof for median of medians depends on having roughly 3n/10 elements on each
+  side of the pivot. If there are lots of copies of the pivot value and the partition is
+  two-way, all the copies end up on one side. An extreme example is a list where every value is
+  the same: one side gets n-1 elements every time and the "linear" algorithm becomes quadratic.
+  With three parts, the copies go in the middle and get thrown away, so the proof still works.
 
-### 1.2 Deterministic selection (median of medians)
+#### 1.2 Median of medians
 
 ```python
-def _mom_select(a, lo, hi, target, tracker, level):
+def _mom(arr, left, right, want, log, depth):
     while True:
-        if hi - lo + 1 <= 5:
-            insertion_sort_range(a, lo, hi)
-            return a[target]
-        # 1. sort each group of 5, move its median to the front of the range
-        slot = lo
-        for start in range(lo, hi + 1, 5):
-            end = min(start + 4, hi)
-            insertion_sort_range(a, start, end)
-            mid = (start + end) // 2
-            a[slot], a[mid] = a[mid], a[slot]
-            slot += 1
-        # 2. recursively find the median of those medians
-        count = slot - lo
-        pivot = _mom_select(a, lo, slot - 1, lo + (count - 1) // 2, tracker, level + 1)
-        # 3. partition around it and keep only the side holding target
-        lt, gt, _ = three_way_partition(a, lo, hi, pivot)
-        if target < lt:   hi = lt - 1
-        elif target > gt: lo = gt + 1
-        else:             return pivot
+        size = right - left + 1
+        if size <= 5:
+            small_sort(arr, left, right)
+            return arr[want]
+        dest = left
+        for g_start in range(left, right + 1, 5):          # groups of 5
+            g_end = min(g_start + 4, right)
+            small_sort(arr, g_start, g_end)
+            g_mid = (g_start + g_end) // 2
+            arr[dest], arr[g_mid] = arr[g_mid], arr[dest]  # median to the front
+            dest += 1
+        n_meds = dest - left
+        pivot = _mom(arr, left, dest - 1, left + (n_meds - 1) // 2, log, depth + 1)
+        eq_start, eq_end, _ = partition3(arr, left, right, pivot)
+        if want < eq_start:   right = eq_start - 1
+        elif want > eq_end:   left = eq_end + 1
+        else:                 return pivot
 ```
 
-(Tracker bookkeeping removed for clarity.) Design choices:
+(I removed the WorkLog lines here to keep it short.) Some decisions I made:
 
-* **In place.** The group medians are swapped into `a[lo..count-1]` instead of being copied
-  into a new list. `slot` moves forward 1 per group while `start` moves 5, so `slot ≤ start`
-  always. That means we only ever overwrite positions in groups we've already finished with.
-  The recursive call then works on that prefix in place.
-* **Loop instead of tail recursion.** "Recurse into the side that holds *k*" is the last thing
-  the algorithm does, so it's a `while` loop. The only real recursion is step 2, on a list 5×
-  smaller, which keeps the stack depth at about log₅ *n* (section 2.1).
-* **Insertion sort for groups.** A group of ≤ 5 items takes at most 10 comparisons, so it's
-  O(1) per group, and insertion sort is the cheapest way to do it.
-* **The partial last group** (when 5 doesn't divide the range) uses its lower median. The proof
-  already allows for this with its "−6" term.
+- The group medians are moved to the front of the range rather than copied into a new list.
+  This works because `dest` moves by 1 per group and `g_start` moves by 5, so `dest` is always
+  behind and only overwrites groups that are already done.
+- The final step (continue into whichever side has k) is a `while` loop instead of a
+  recursive call. The only real recursion is for finding the pivot, which is on a list 5 times
+  smaller, so the call stack stays around log5(n) deep.
+- Groups are sorted with insertion sort. 5 elements need at most 10 comparisons, so this is
+  constant time per group.
+- If the last group has fewer than 5 elements I just take its lower median. The proof already
+  has a "-6" term that covers this.
 
-### 1.3 Randomized selection (quickselect)
+#### 1.3 Quickselect
 
 ```python
-def _quickselect(a, target, choose_pivot, tracker):
-    lo, hi = 0, len(a) - 1
-    while lo < hi:
-        pivot = a[choose_pivot(lo, hi)]       # rng.randint(lo, hi)
-        lt, gt, c = three_way_partition(a, lo, hi, pivot)
-        if target < lt:   hi = lt - 1
-        elif target > gt: lo = gt + 1
-        else:             break
-    return a[target]
+def _qselect(arr, want, pick_pivot, log):
+    left, right = 0, len(arr) - 1
+    while left < right:
+        pivot = arr[pick_pivot(left, right)]   # rng.randint(left, right)
+        eq_start, eq_end, c = partition3(arr, left, right, pivot)
+        if want < eq_start:   right = eq_start - 1
+        elif want > eq_end:   left = eq_end + 1
+        else:                 break
+    return arr[want]
 ```
 
-This is Hoare's FIND (1961) with a random pivot and the same three-way partition. It's fully
-iterative, so it uses O(1) extra space. `fixed_pivot_select` is the same loop with
-`choose_pivot = lambda lo, hi: hi`. I added it only so the benchmark can show what the random
-pivot buys.
+This is basically Hoare's FIND algorithm from 1961 with a random pivot. It's a plain loop, so no
+recursion and O(1) extra space. `select_last_pivot` is the same loop but `pick_pivot` always
+returns `right`.
 
-### 1.4 Other choices and edge cases
+#### 1.4 Edge cases and other details
 
-* **The input isn't changed** by default: each function works on `list(items)`. Pass
-  `copy=False` to skip that O(*n*) copy and let the function reorder your list. In that case
-  the answer also ends up at index *k* − 1, with smaller items before it and larger items after
-  it, as a side effect.
-* **Values only need `<`**, so ints, floats, strings and tuples all work.
-* **Bad arguments** raise errors: an empty list or *k* outside 1..*n* raises `ValueError`, and a
-  non-int *k* (including `True`) raises `TypeError`.
-* **Tests.** [`test_selection.py`](test_selection.py) has 20 tests. They check every *k* on
-  lists of many sizes (including all n ≤ 7, and 25/26, where group boundaries change),
-  heavy-duplicate and all-equal lists, sorted and reversed lists, floats, strings and tuples,
-  and that the input isn't mutated. They also check the analysis: work stays below 20*n* on 5
-  input shapes, recursion depth stays within log₅ *n* + 1, `fixed_pivot_select` is quadratic on
-  sorted input, and `randomized_select` isn't.
+- The input list isn't modified by default (the functions work on `list(seq)`). `copy=False`
+  skips the copy and lets the function rearrange your list. As a side effect, the answer then
+  ends up at index k-1.
+- Only `<` is used on the values, so it works for ints, floats, strings, tuples and so on.
+- An empty list or k outside 1..n raises `ValueError`. A k that isn't an int (including `True`)
+  raises `TypeError`.
+- [`test_selection.py`](test_selection.py) has 20 tests. They try every k on lists of many
+  sizes (including 5/6 and 25/26 where the group logic changes), lists full of duplicates, a list
+  where all values are equal, sorted and reversed lists, and floats, strings and tuples. There
+  are also tests for the analysis itself: work under 20n on five kinds of input, recursion depth
+  of at most log5(n)+1, and the last-pivot version being quadratic on sorted input while the
+  random one isn't.
 
-## 2. Performance analysis
+### 2. Time and space analysis
 
-### 2.1 Deterministic selection: O(*n*) in the worst case
+#### 2.1 Why median of medians is O(n) even in the worst case
 
-Let *x* be the median of the ⌈*n*/5⌉ group medians. At least half of the groups have a median
-≥ *x*. Each of those groups, except possibly *x*'s own group and the short last group, holds at
-least 3 items ≥ *x*: its median and the two items above the median. So
+Call the pivot x (the median of the ⌈n/5⌉ group medians). At least half of the groups have a
+median that is ≥ x. Each of those groups has at least 3 elements ≥ x (the median and the two
+above it), except maybe x's own group and the last short group. So:
 
-  #(items ≥ *x*) ≥ 3 · (⌈½⌈*n*/5⌉⌉ − 2) ≥ 3*n*/10 − 6.
+    number of elements >= x  >=  3 * (ceil(ceil(n/5) / 2) - 2)  >=  3n/10 - 6
 
-So at most 7*n*/10 + 6 items are **strictly less** than *x*. By the symmetric argument, at most
-7*n*/10 + 6 are **strictly greater**. The three-way partition only ever keeps the strictly-less
-or the strictly-greater side, because items equal to *x* end the search, so the remaining range
-has at most 7*n*/10 + 6 items. This holds **for every input, duplicates included**. Each step
-costs:
+That means at most 7n/10 + 6 elements are strictly less than x, and by the same argument at most
+7n/10 + 6 are strictly greater. Since the three-way partition only ever continues into the
+"less" part or the "greater" part (the equal part ends the search), the next range is never
+bigger than 7n/10 + 6. This works for any input, duplicates included.
 
-| Step | Cost |
+Adding up the cost of each step:
+
+| step | cost |
 |---|---|
-| Sort ⌈*n*/5⌉ groups of ≤ 5 | O(*n*) (≤ 10 comparisons per group) |
-| Find the median of medians recursively | *T*(⌈*n*/5⌉) |
-| Partition | O(*n*) |
-| Continue on one side | ≤ *T*(7*n*/10 + 6) |
+| sort ⌈n/5⌉ groups of 5 | O(n) |
+| recursive call to find the median of medians | T(n/5) |
+| partition | O(n) |
+| continue into one side | at most T(7n/10 + 6) |
 
-  *T*(*n*) ≤ *T*(⌈*n*/5⌉) + *T*(7*n*/10 + 6) + *an*.
+    T(n) <= T(n/5) + T(7n/10 + 6) + a*n
 
-**Why this is linear.** Guess *T*(*n*) ≤ *cn* and substitute:
+To show it's linear, assume T(n) ≤ cn and plug it in:
 
-  *T*(*n*) ≤ *c*(*n*/5 + 1) + *c*(7*n*/10 + 6) + *an* = 9*cn*/10 + 7*c* + *an*.
+    T(n) <= c(n/5 + 1) + c(7n/10 + 6) + a*n = 9cn/10 + 7c + a*n
 
-That's ≤ *cn* whenever *cn*/10 − 7*c* ≥ *an*, which holds for *n* ≥ 140 and *c* ≥ 20*a*.
-(Smaller *n* are covered by choosing *c* large enough.) The key fact is **1/5 + 7/10 = 9/10
-< 1**: the two recursive calls together work on less than the whole input, so the work at each
-level of the recursion tree shrinks geometrically (*n*, 0.9*n*, 0.81*n*, …). The total is at
-most 10× the top level. With groups of 3 the sum would be 1/3 + 2/3 = 1. Every level would then
-cost the full *n*, and you'd get Θ(*n* log *n*). Five is the smallest odd group size that works.
+This is ≤ cn as long as cn/10 - 7c ≥ an, which is true for n ≥ 140 if c ≥ 20a (for smaller n we
+can just pick c big enough). What makes it work is that 1/5 + 7/10 = 9/10 is less than 1. Both
+recursive calls together handle less than the full input, so each level of the recursion does
+less work than the one above (n, 0.9n, 0.81n, ...) and the total is at most about 10 times the
+first level. If you used groups of 3 instead, it would be 1/3 + 2/3 = 1, every level would cost
+n, and you'd end up with O(n log n).
 
-**The constant is big, and the measurements show it.** Sorting a group of 5 random items takes
-about 7.7 comparisons on average (1 + 5/3 + 9/4 + 14/5), or 1.54 per item. The partition adds
-about 1.5 per item. Both costs come back at every level of both recursions. Measured over 500
-random inputs, `deterministic_select` uses **9.7 comparisons per item** (sd 0.48), against 5.1
-for quickselect (section 3.4).
+In practice the constant is pretty big. Insertion sort on 5 random values needs about 7.7
+comparisons on average (1 + 5/3 + 9/4 + 14/5), which is around 1.5 per element. The partition
+adds another ~1.5 per element. And this happens again at every level of both recursions. Across
+500 random inputs, `select_mom` used 9.7 comparisons per element on average, while quickselect
+used about 5.0 (section 3.4).
 
-**Space.** O(1) extra per call, and the only real recursion is step 2. That gives a stack depth
-of log₅ *n* + O(1). The tracker measured depth 7 at *n* = 100,000 (log₅ 10⁵ ≈ 7.2). The
-default copy adds O(*n*) on top; `copy=False` removes it.
+Space: every call uses O(1) extra, and the recursion is only through the pivot step, so the stack
+is about log5(n) deep. With n = 100,000 my WorkLog recorded a depth of 7 (log5(100000) is about
+7.2). The input copy is another O(n), unless you pass `copy=False`.
 
-### 2.2 Randomized selection: O(*n*) expected
+#### 2.2 Why quickselect is O(n) on average
 
-The pivot is uniformly random, so its rank *q* among the current *m* items is uniform on
-1..*m*, **whatever order the input is in**. After the pass we keep at most max(*q* − 1, *m* −
-*q*) items. Following CLRS (§9.2), write *T*(*m*) for the expected work:
+Since the pivot is picked uniformly at random, its rank q among the m elements in the current
+range is uniform on 1..m, and this doesn't depend at all on how the input is ordered. After the
+partition, at most max(q-1, m-q) elements are left. Following CLRS 9.2:
 
-  E[*T*(*n*)] ≤ (1/*n*) Σ<sub>*q*=1..*n*</sub> E[*T*(max(*q* − 1, *n* − *q*))] + *an*
-       ≤ (2/*n*) Σ<sub>*j*=⌊*n*/2⌋..*n*−1</sub> E[*T*(*j*)] + *an*.
+    E[T(n)] <= (1/n) * sum over q of E[T(max(q-1, n-q))] + a*n
+            <= (2/n) * sum_{j = n/2}^{n-1} E[T(j)] + a*n
 
-Substituting E[*T*(*j*)] ≤ *cj* gives E[*T*(*n*)] ≤ *c*(3*n*/4 + 1/2) + *an*. That's ≤ *cn*
-whenever *n*(*c*/4 − *a*) ≥ *c*/2, which holds for any *c* > 4*a* once *n* ≥ 2*c*/(*c* − 4*a*).
-So E[*T*(*n*)] = O(*n*).
+Assuming E[T(j)] ≤ cj gives E[T(n)] ≤ c(3n/4 + 1/2) + an, which is ≤ cn when
+n(c/4 - a) ≥ c/2. That holds for any c > 4a once n is large enough. So E[T(n)] = O(n).
 
-Here's the intuition. With probability 1/2 the pivot lands in the middle half of the ranks, and
-then at least 1/4 of the range is thrown away. So on average it takes 2 passes to shrink the
-range by a factor of 3/4. Total expected work is about 2*n*(1 + 3/4 + (3/4)² + …) = 8*n*. That's
-a loose bound, but plainly linear.
+A more intuitive way to see it: half the time the pivot lands in the middle half of the values,
+and when that happens at least a quarter of the range gets removed. So it takes about 2 passes on
+average to shrink the range to 3/4 of its size. That gives roughly
+2n(1 + 3/4 + (3/4)² + ...) = 8n, which is a loose bound but clearly linear.
 
-**The exact expectation.** Knuth (1971) derived the expected number of items examined:
+Knuth (1971) worked out the exact expected number of elements the partitions go over:
 
-  E[*C*(*n*, *k*)] ≈ 2*n* + 2*k* ln(*n*/*k*) + 2(*n* − *k*) ln(*n*/(*n* − *k*)).
+    E[C(n,k)] ≈ 2n + 2k ln(n/k) + 2(n-k) ln(n/(n-k))
 
-It's 2*n* for the minimum or maximum and peaks at the median, at **2*n*(1 + ln 2) ≈ 3.386*n***.
-The benchmark checks this directly (sections 3.4 and 3.5). The measured mean over 500 runs was
-3.403*n*.
+This is 2n when looking for the minimum or maximum and is largest at the median, where it's
+2n(1 + ln 2) ≈ 3.386n. In my experiment the average over 500 runs was 3.377n.
 
-**Worst case.** Still Θ(*n*²): if every pivot happened to be the largest remaining item, each
-pass would remove one item. For random pivots this is astronomically unlikely. A pass shrinks
-the range to ≤ 3/4 of its size with probability ≥ 1/2, so needing many more passes than
-expected has exponentially small probability. In 500 trials the worst run examined 7.4*n*, about
-2.2× the mean. Since no input can make a bad pivot sequence likely, an adversary who knows the
-code still can't force the bad case.
+The worst case is still O(n²), for example if every pivot happened to be the largest remaining
+element. But with random pivots that's extremely unlikely. Each pass has at least a 1/2 chance of
+cutting the range to 3/4 or less, so the chance of needing many more passes than expected drops
+off exponentially. Out of 500 runs, the worst one touched 8.1n elements, about 2.4 times the
+average. And since the pivot doesn't depend on the input, there's no particular input that makes
+it slow.
 
-**Space.** The loop is iterative, so it uses O(1) extra space plus the optional O(*n*) copy.
-There's no recursion, so the stack depth is 0.
+Space: O(1) because it's a loop, plus the O(n) copy if you don't turn it off.
 
-### 2.3 Fixed pivot, for contrast
+#### 2.3 Fixed pivot, for comparison
 
-With `pivot = a[hi]` on a sorted list, every pivot is the largest remaining item. Finding the
-median then removes one item per pass for *n*/2 passes and examines Σ *m* ≈ 3*n*²/8 items. That's
-Θ(*n*²). The benchmark measures exactly 1500.8*n* examined at *n* = 4000, and 3*n*/8 = 1500.
-Sorted and nearly-sorted inputs are common in practice, which is why a fixed pivot isn't used.
+If the pivot is always `arr[right]` and the list is sorted, the pivot is always the largest
+element left. To find the median it has to remove one element per pass for n/2 passes, touching
+about 3n²/8 elements in total. My measurement at n = 4000 was exactly 1500.8n touched, and
+3·4000/8 = 1500. Sorted or nearly sorted input happens a lot in real data, which is why nobody
+uses a fixed pivot.
 
-### 2.4 Summary and overheads
+#### 2.4 Summary
 
-| | Deterministic | Randomized |
+| | median of medians | quickselect |
 |---|---|---|
-| Worst-case time | **Θ(*n*)** | Θ(*n*²) (probability → 0) |
-| Expected time | Θ(*n*) | **Θ(*n*)** |
-| Measured comparisons / *n* (random input, median) | ~9.7–10.2 | ~4.8–6.8 (mean 5.1) |
-| Run-to-run spread | tiny (input-dependent only) | sd ≈ 1.6*n* comparisons |
-| Extra space | O(log *n*) stack | O(1) |
-| Other overheads | sorting groups, the extra recursive call, swapping medians | one `randint` per pass (~log *n* passes, negligible) |
-| Depends on input order? | No | No |
-| Easy to implement? | Fiddly (group bookkeeping, the recursion) | About 10 lines |
+| worst case | O(n) | O(n²), but very unlikely |
+| average | O(n) | O(n) |
+| comparisons per element (random input, median) | about 9.7 to 10 | about 5 on average |
+| variation between runs | small | sd about 1.6n comparisons |
+| extra space | O(log n) stack | O(1) |
+| other overhead | sorting groups, extra recursion, swapping medians | one `randint` call per pass |
+| depends on input order? | no | no |
+| how hard to write | more fiddly | about 10 lines |
 
 ---
 
-## 3. Empirical analysis
+### 3. Experiments
 
-### 3.1 Setup
+#### 3.1 Setup
 
-* **Sizes**: *n* = 1,000 to 200,000. **Inputs**: random integers in [0, 10*n*), sorted,
-  reverse-sorted, and "few unique" (random integers in 0..9). *k* = lower median, the hardest
-  case for quickselect.
-* For each (input, *n*, algorithm) I report the **median of 5 timed runs** with the garbage
-  collector off. Each randomized run uses a different seed. Timings include the O(*n*) input
-  copy for all algorithms, so the comparison is fair.
-* As a reference I also timed `sorted(data)[k-1]`, which is CPython's Timsort, written in C.
-* Comparison counts come from `SelectTracker` and don't depend on machine speed.
+- n from 1,000 to 200,000. Four kinds of input: random integers in [0, 10n), sorted, reversed,
+  and "few values" (random integers 0 to 9). k is always the lower median, which is the most
+  expensive k for quickselect.
+- Each time is the median of 5 runs with the garbage collector turned off. Quickselect uses a
+  different seed for each run. The time includes the input copy for every algorithm so the
+  comparison is fair.
+- I also timed `sorted(data)[k-1]` as a reference point. That's Timsort, implemented in C.
+- Comparison counts come from WorkLog, so they don't depend on how fast the machine is.
 
-![Selection running time](results/selection_times.png)
+![Fig 1](results/fig1_runtime.png)
 
-![Work and time per item](results/selection_work.png)
+![Fig 2](results/fig2_per_item.png)
 
-### 3.2 Both algorithms scale linearly
+#### 3.2 Both are linear
 
-On a log-log plot both algorithms run parallel to the O(*n*) guide line on all four inputs.
-The per-item view is clearer: time per item and comparisons per item both stay flat as *n* grows
-200-fold. On random input:
+In Figure 1 (log-log scale) both algorithms run parallel to the linear guide line for every kind
+of input. Figure 2 shows it more directly: comparisons per element and time per element stay
+roughly flat while n grows by a factor of 200. Random input:
 
-| *n* | Deterministic | cmp/*n* | Randomized | cmp/*n* | `sorted()` |
+| n | MoM | cmp/n | Quickselect | cmp/n | sorted() |
 |---:|---:|---:|---:|---:|---:|
-| 1,000 | 0.56 ms | 9.26 | 0.15 ms | 5.18 | 0.04 ms |
-| 10,000 | 7.78 ms | 9.71 | 2.19 ms | 4.99 | 0.61 ms |
-| 100,000 | 62.8 ms | 10.21 | 21.2 ms | 6.84 | 8.6 ms |
-| 200,000 | 124.7 ms | 10.05 | 35.8 ms | 5.49 | 18.5 ms |
+| 1,000 | 0.28 ms | 4.67 | 0.18 ms | 4.73 | 0.04 ms |
+| 10,000 | 5.71 ms | 9.82 | 1.60 ms | 5.18 | 0.67 ms |
+| 100,000 | 61.7 ms | 9.99 | 19.2 ms | 5.49 | 8.7 ms |
+| 200,000 | 147.9 ms | 10.05 | 33.7 ms | 4.42 | 22.4 ms |
 
-Doubling *n* from 100k to 200k roughly doubles both selection times. Deterministic selection is
-consistently **3.0 to 4.5× slower** than randomized on random, sorted and reversed input, at
-every size. That's the
-constant-factor cost predicted in section 2.1: about twice the comparisons, plus the extra work
-of sorting groups, swapping medians and the second recursion.
+Going from 100k to 200k a bit more than doubles MoM's time and a bit less than doubles
+quickselect's, which is about what you'd expect with timing noise. Median of medians was usually
+3 to 4.5 times slower than quickselect, with a few points closer to 2x. That matches the larger
+constant from section 2.1: roughly double the comparisons, plus the extra group sorting and the
+second recursion.
 
-The randomized comparison counts jump around (4.8 to 6.8 per item) because each data point
-reflects only 5 random runs. The deterministic counts form a smooth, slowly rising curve (8.9 to
-10.2). It approaches its limit from below because a small list finishes in a few levels, before
-the geometric sum is complete.
+The n = 1,000 MoM point (4.67 cmp/n) is low because one of the early pivots happened to be the
+median itself, which ends the search early. For larger n the MoM count settles around 10. The
+quickselect numbers jump around more (4.4 to 5.5) because each point is only 5 random runs.
 
-### 3.3 Effect of input distribution
+#### 3.3 Different input types
 
-| Input (*n* = 200,000) | Deterministic | cmp/*n* | Randomized | cmp/*n* |
+| input (n = 200,000) | MoM | cmp/n | Quickselect | cmp/n |
 |---|---:|---:|---:|---:|
-| Random | 124.7 ms | 10.05 | 35.8 ms | 5.49 |
-| Sorted | 105.3 ms | 8.83 | 30.5 ms | 4.19 |
-| Reverse-sorted | 120.6 ms | 9.66 | 30.1 ms | 4.43 |
-| Few unique | 43.5 ms | 3.87 | 26.3 ms | 4.54 |
+| random | 147.9 ms | 10.05 | 33.7 ms | 4.42 |
+| sorted | 124.5 ms | 8.83 | 42.1 ms | 5.65 |
+| reversed | 139.2 ms | 9.66 | 54.1 ms | 6.49 |
+| few values | 61.4 ms | 3.86 | 30.1 ms | 4.02 |
 
-* **Neither algorithm degrades on sorted or reverse-sorted input.** That's the point of both
-  designs. For quickselect the pivot is random, so the input order is irrelevant. The fixed-pivot
-  version, by contrast, gets ~410× slower on sorted input already at *n* = 4,000 (section 3.6).
-* Deterministic selection is a bit **cheaper on sorted input** (8.8 vs 10.1 comparisons per
-  item). Its groups of five are already sorted, so insertion sort does 4 comparisons per group
-  instead of ~7.7.
-* **Few unique values** helps both, and helps the deterministic version most (3.9 vs 10
-  comparisons per item). With only 10 values, the median's value fills ~10% of the list.
-  After one or two passes the target position falls inside the `==` block and the search
-  stops. This is the early exit from section 1.1 at work. A two-way partition would keep
-  recursing on these copies.
+- Neither one gets slow on sorted or reversed input, which is the whole point of both designs.
+  The last-pivot version on the other hand is about 390 times slower on sorted input already at
+  n = 4,000 (section 3.6).
+- Quickselect's counts on sorted/reversed are a little higher here than on random input, but
+  they're well within its normal run-to-run spread (section 3.4 has a standard deviation of
+  1.6n). It's not a trend; the order of the input doesn't affect a random pivot.
+- MoM is slightly cheaper on sorted input (8.8 vs 10 comparisons per element). Its groups of
+  five are already in order there, so insertion sort only needs 4 comparisons per group
+  instead of about 7.7.
+- Few distinct values helps both, MoM the most (3.9 vs 10). With 10 values, the median value
+  takes up about 10% of the list. After one or two passes k is inside the "equal" block and the
+  search stops. A two-way partition would keep going through all those copies.
 
-### 3.4 Run-to-run variation
+#### 3.4 Variation between runs
 
-Next I ran 500 trials with *n* = 10,000, each on a fresh random input, and for quickselect a
-fresh seed too:
+500 runs at n = 10,000, with a new random list (and a new quickselect seed) every time:
 
-| | cmp/*n* mean | sd | min | max | examined/*n* mean |
+| | cmp/n avg | sd | min | max | touched/n avg |
 |---|---:|---:|---:|---:|---:|
-| Deterministic | 9.738 | 0.479 | 4.932 | 10.124 | 3.159 |
-| Randomized | 5.111 | 1.592 | 2.236 | 10.898 | **3.403** (theory 3.386) |
+| MoM | 9.696 | 0.644 | 4.918 | 10.133 | 3.145 |
+| Quickselect | 5.027 | 1.567 | 2.067 | 12.991 | 3.377 (theory 3.386) |
 
-![Spread of the work](results/selection_spread.png)
+![Fig 3](results/fig3_variation.png)
 
-This is the practical difference between a worst-case and an expected-case bound.
-Deterministic selection is tightly concentrated: almost every run uses 9.5–10.1*n* comparisons.
-The low outliers are runs where an early pivot happened to equal the answer. Quickselect is
-**twice as cheap on average but 3.3× more variable**, with a long right tail. Its worst run
-(10.9*n*) roughly matched a typical deterministic run. The measured mean number of items
-examined, 3.403*n*, is within 0.5% of Knuth's 2 + 2 ln 2 = 3.386.
+This is what "worst case" vs "expected" looks like in practice. MoM almost always lands between
+9.5n and 10.1n comparisons (the few low ones are runs where an early pivot was the answer).
+Quickselect is about twice as cheap on average but its standard deviation is 2.4 times bigger,
+and its worst run (13.0n) was actually worse than MoM's worst. The average number of elements
+touched, 3.377n, is within 0.3% of Knuth's 2 + 2 ln 2 = 3.386.
 
-### 3.5 Effect of *k*
+#### 3.5 Different values of k
 
-For each *k* I ran 100 randomized trials on one random list of *n* = 50,000:
+For each k I ran quickselect 100 times on the same random list of 50,000 elements:
 
-![Work vs k](results/selection_vs_k.png)
+![Fig 4](results/fig4_by_k.png)
 
-The quickselect mean follows Knuth's curve closely. It's 2.00*n* at *k* = 1 (theory 2.00),
-3.41*n* at the median (theory 3.39) and 2.05*n* at *k* = *n* (theory 2.00). Deterministic
-selection stays at ~3.2*n* examined (~10*n* comparisons) **for every *k***. Its pivot is chosen
-without regard to *k*, so asking for the minimum costs as much as asking for the median. If you
-only need extremes or near-extremes, quickselect's advantage is even bigger, and a plain linear
-scan (*n* − 1 comparisons) beats both.
+The quickselect average follows Knuth's formula pretty closely: 2.01n at k = 1 (theory 2.00),
+3.22n at the median (theory 3.39) and 1.97n at k = n (theory 2.00). The biggest gap was about
+0.26n at k/n = 0.2, which is reasonable for 100 runs given how wide the min-max band is. Median
+of medians stays at about 3.2n elements touched (about 10n comparisons) no matter what k is,
+because it picks its pivot without looking at k. So if you only need something close to the
+min or max, quickselect is even further ahead, and a simple linear scan (n-1 comparisons) beats
+both of them for the actual min/max.
 
-### 3.6 What the random pivot buys
+#### 3.6 What the random pivot gets you
 
-The median of a sorted list, with three different pivot choices:
+Median of a sorted list, three pivot rules:
 
-| *n* | Fixed pivot | examined/*n* | Randomized | examined/*n* | Deterministic | examined/*n* |
+| n | last pivot | touched/n | quickselect | touched/n | MoM | touched/n |
 |---:|---:|---:|---:|---:|---:|---:|
-| 250 | 1.06 ms | 94.5 | 0.05 ms | 4.11 | 0.10 ms | 2.65 |
-| 1,000 | 19.0 ms | 375.8 | 0.20 ms | 4.09 | 0.44 ms | 3.00 |
-| 4,000 | **305.3 ms** | **1500.8** | 0.74 ms | 3.99 | 1.84 ms | 3.19 |
+| 250 | 1.00 ms | 94.5 | 0.05 ms | 4.11 | 0.10 ms | 2.65 |
+| 1,000 | 17.3 ms | 375.8 | 0.20 ms | 4.09 | 0.45 ms | 3.00 |
+| 4,000 | 287.4 ms | 1500.8 | 0.74 ms | 3.99 | 1.85 ms | 3.19 |
 
-![Fixed vs random pivot](results/fixed_pivot.png)
+![Fig 5](results/fig5_pivot.png)
 
-The fixed pivot's examined/*n* grows linearly with *n* (exactly 3*n*/8, as computed in section
-2.3), and its time grows ~4× every time *n* doubles: quadratic. The other two stay flat.
+For the last-pivot version, touched/n grows linearly with n (it's exactly 3n/8, as worked out in
+2.3), and the time roughly quadruples every time n doubles. That's quadratic. The other two stay
+flat.
 
-### 3.7 The `sorted()` reference
+#### 3.7 Comparing with sorted()
 
-Pure-Python linear-time selection **loses to C's O(*n* log *n*) Timsort** at every size tested:
-18.5 ms vs 35.8 ms (randomized) vs 124.7 ms (deterministic) on 200,000 random items. On sorted input
-Timsort detects the single ascending run and finishes in O(*n*), well under a millisecond. This
-doesn't contradict the theory. Big-O hides constant factors, and here the constant includes
-roughly a 50–100× gap between one interpreted Python operation and one C operation. The
-asymptotics still show: Timsort's time per item on random data rises from 36 ns to 92 ns over
-the tested range (the log *n* factor), while quickselect's stays roughly flat at 150–220 ns, with no upward trend. At much
-larger *n* the curves would eventually cross. In a compiled language (C++'s
-`std::nth_element` is introselect) selection beats sorting at every practical size.
+The surprising result is that the built-in `sorted()` beats both of my linear-time functions at
+every size I tried: 22.4 ms vs 33.7 ms (quickselect) vs 147.9 ms (MoM) on 200,000 random
+numbers. On sorted input, Timsort notices the list is one long run and finishes in under a
+millisecond. This doesn't break the theory. Big-O ignores constant factors, and here the
+constant includes the gap between interpreted Python and compiled C, which is something like
+50-100x per operation. You can still see the log n factor: Timsort's time per element on random
+data goes from 39 ns up to 112 ns over the range I tested, while quickselect's stays around
+115-190 ns without any upward trend. For big enough n the lines would cross. In C++,
+`std::nth_element` (which is introselect) is faster than sorting at basically any size.
 
-### 3.8 How the results relate to the theory
+#### 3.8 Theory vs what I measured
 
-| Prediction | Observed |
+| expected | measured |
 |---|---|
-| Both are linear | Flat time/*n* and comparisons/*n* over a 200× range of *n*, on all four inputs |
-| Deterministic doesn't depend on input order or *k* | 8.8–10.1 cmp/*n* for every ordering, ~3.2*n* examined for every *k* |
-| Randomized doesn't depend on input order | 4.2–5.5 cmp/*n* on random, sorted and reversed input |
-| Randomized expected work is 2*n*(1 + ln 2) at the median | Measured 3.403*n* vs 3.386*n* |
-| Randomized work follows Knuth's formula in *k* | Within ~0.22*n* at every *k* tested |
-| Deterministic has a larger constant | 3.0–4.5× slower, ~2× the comparisons |
-| Worst-case guarantee only for deterministic | sd 0.48*n* vs 1.59*n*; quickselect's worst run ≈ deterministic's typical run |
-| Fixed pivot is Θ(*n*²) on sorted input | Examined exactly 3*n*²/8 |
-| Recursion depth is log₅ *n* | Depth 7 at *n* = 10⁵ |
+| both linear | flat time/n and comparisons/n over a 200x range of n, all inputs |
+| MoM doesn't care about input order or k | 8.8-10 cmp/n for every ordering, ~3.2n touched for every k |
+| quickselect doesn't care about input order | 4.4-6.5 cmp/n on random/sorted/reversed, inside its normal spread |
+| quickselect averages 2n(1+ln2) at the median | 3.377n vs 3.386n |
+| quickselect follows Knuth's formula in k | within about 0.26n at every k |
+| MoM has a bigger constant | 2-5x slower (mostly 3-4.5x), ~2x the comparisons |
+| only MoM is guaranteed | sd 0.64n vs 1.57n |
+| last pivot is O(n²) on sorted input | touched exactly 3n²/8 |
+| MoM recursion depth is log5(n) | 7 at n = 100,000 |
 
-**Which one to use?** Use randomized quickselect by default: it's simpler and roughly 3–4× faster. Use
-median of medians when a worst-case bound actually matters, for example real-time systems or
-inputs chosen by an adversary. Better still, use the hybrid that libraries ship ("introselect"):
-run quickselect, and switch to median of medians only if it isn't making progress. That gives
-quickselect's speed and median of medians' guarantee.
+So which one should you use? Quickselect is simpler and usually 3-4 times faster, so it's the
+better default. Median of medians makes sense when you really need a worst-case guarantee, like
+in real-time code or when someone could feed you inputs designed to be slow. Libraries usually
+combine them ("introselect"): run quickselect, and only switch to median of medians if it isn't
+making enough progress.
 
 ---
 
-# Part 2: Elementary data structures
+## Part 2: Data structures
 
-## 4. Implementation
+### 4. How I implemented them
 
-All the code is in [`data_structures.py`](data_structures.py). It's tested by
-[`test_data_structures.py`](test_data_structures.py) (21 tests). Several of those tests run
-thousands of random operations against a Python `list` as a reference and check the two agree
-after every single operation.
+The code is in [`data_structures.py`](data_structures.py) and the tests are in
+[`test_data_structures.py`](test_data_structures.py) (21 tests). Several tests do a few thousand
+random operations on my structure and on a normal Python list side by side, and check they agree
+after every operation.
 
-| Class | Representation | Key design choices |
+| class | how it's stored | notes |
 |---|---|---|
-| `DynamicArray` | fixed block of `capacity` slots + `size` | Doubles when full, halves at ¼ full; `insert`/`delete` shift by hand; negative indexes work |
-| `Matrix` | one flat row-major block, item (*r*, *c*) at slot *r*·cols + *c* | O(1) access by arithmetic; `insert_row`/`col`, `delete_row`/`col`, `transpose`, `+`, `@` |
-| `ArrayStack` | block + `top` index | Push/pop at the end, so nothing ever shifts |
-| `ArrayQueue` | circular buffer: block + `head` + `size` | Tail = (head + size) mod capacity; when growing, the contents are unwrapped so head goes back to 0 |
-| `SinglyLinkedList` | `Node(value, next)` with `__slots__`, `head` + `tail` + `size` | Tail pointer for O(1) `push_back`; `insert_after(node)` for O(1) splicing; in-place `reverse` |
-| `LinkedStack` / `LinkedQueue` | nodes; stack pushes at head, queue enqueues at tail and dequeues at head | Never needs to resize |
-| `RootedTree` | `TreeNode(value, parent, left_child, right_sibling)` | Left-child, right-sibling (CLRS §10.3): 3 pointers per node regardless of how many children it has |
+| `ResizableArray` | fixed block of slots + a count | doubles when full, halves when only 1/4 used; insert/delete shift elements by hand |
+| `Matrix` | one flat row-major block, (r, c) is at r·cols + c | O(1) access; add/drop rows and columns, transpose, +, @ |
+| `ArrStack` | block + top index | push/pop at the end, nothing ever shifts |
+| `RingQueue` | circular buffer: block + front index + count | back = (front + count) % cap; when it grows the contents are unwrapped |
+| `LinkedList` | `ListNode(val, nxt)` with head, tail and count | tail pointer for O(1) add_back, `insert_after(node)` for O(1) splicing, in-place reverse |
+| `NodeStack` / `NodeQueue` | linked nodes | stack pushes at the head; queue adds at the tail and removes at the head |
+| `GeneralTree` | `TreeNode(val, parent, first_child, next_sibling)` | left-child/right-sibling from CLRS 10.3, so 3 links per node no matter how many children |
 
-**What "from scratch" means here.** The array-based classes get their storage once, as
-`[None] * capacity`. That's the closest Python has to a raw, fixed-size C array. From then on
-they only **read and write slots by index**. Growing, shrinking, shifting and wrap-around are all
-done by this code, never by `list.append`, `insert` or `pop`. That keeps the measured costs
-honest: when `DynamicArray.insert(0, x)` is O(*n*), you can see the loop that makes it O(*n*).
-Removed slots are set back to `None` so the structure doesn't hold on to objects the caller
-deleted.
+I wanted these to be actually "from scratch", so the array classes only use Python's list to
+grab a fixed block of memory once (`[None] * cap`). After that they just read and write single
+slots by index. Growing, shrinking, shifting, and the wrap-around in the queue are all in my
+code; I never call `list.append`, `insert` or `pop` on the block. That makes the timings honest:
+when `ResizableArray.insert(0, x)` is O(n), it's because of a loop you can see in the file.
+Removed slots get reset to `None` so the structure doesn't keep old objects alive.
 
-**Tree traversals** (`preorder`, `height`, `level_order`, `find`) use this module's own
-`ArrayStack` and `LinkedQueue` instead of recursion. A test builds a 5,000-deep chain, deeper
-than Python's default recursion limit of 1,000, and traverses it without trouble.
+The tree traversals (`preorder`, `height`, `bfs`, `find`) use my own `ArrStack` and `NodeQueue`
+instead of recursion. One test builds a chain 5,000 nodes deep (Python's default recursion limit
+is 1,000) and it works fine.
 
-## 5. Time complexity of each operation
+### 5. Complexity of the operations
 
-| Structure | Access / peek | Insert | Delete | Search | Space |
+| structure | access / peek | insert | delete | search | space |
 |---|---|---|---|---|---|
-| `DynamicArray` | O(1) | append O(1)\*; insert(*i*) O(*n* − *i*) | pop O(1)\*; delete(*i*) O(*n* − *i*) | O(*n*) | Θ(*n*), ≤ 4*n* slots |
-| `Matrix` (*r*×*c*) | O(1) | row/col O(*rc*) | row/col O(*rc*) | O(*rc*) | Θ(*rc*) |
-| `ArrayStack` | peek O(1) | push O(1)\* | pop O(1) | | Θ(*n*) |
-| `ArrayQueue` | peek O(1) | enqueue O(1)\* | dequeue O(1) | | Θ(*n*) |
-| `SinglyLinkedList` | get(*i*) O(*i*) | front/back O(1); after a node O(1); at *i* O(*i*) | front O(1); back O(*n*); at *i* O(*i*) | O(*n*) | Θ(*n*) nodes |
-| `LinkedStack` | O(1) | O(1) | O(1) | | Θ(*n*) |
-| `LinkedQueue` | O(1) | O(1) | O(1) | | Θ(*n*) |
-| `RootedTree` | parent O(1), children O(*d*) | add_child O(*d*) | remove_subtree O(*d* + subtree) | O(*n*) | Θ(*n*) |
+| ResizableArray | O(1) | append O(1) amortized, at i O(n-i) | pop O(1) amortized, at i O(n-i) | O(n) | O(n), at most 4n slots |
+| Matrix (r x c) | O(1) | row/col O(rc) | row/col O(rc) | O(rc) | O(rc) |
+| ArrStack | O(1) | push O(1) amortized | pop O(1) | - | O(n) |
+| RingQueue | O(1) | enqueue O(1) amortized | dequeue O(1) | - | O(n) |
+| LinkedList | get(i) O(i) | front/back O(1), after a node O(1), at i O(i) | front O(1), back O(n), at i O(i) | O(n) | O(n) nodes |
+| NodeStack | O(1) | O(1) | O(1) | - | O(n) |
+| NodeQueue | O(1) | O(1) | O(1) | - | O(n) |
+| GeneralTree | parent O(1), children O(d) | add_child O(d) | cut O(d + subtree size) | O(n) | O(n) |
 
-\* amortized. *d* = number of children of the parent.
+(d = number of children the parent has)
 
-**Why doubling gives O(1) amortized appends.** Starting from capacity 4, *n* appends cause
-copies of 4 + 8 + 16 + … + *n* < 2*n* items in total. Add the *n* writes and the total is under
-3*n*, so each append costs O(1) on average. (Accounting view: charge 3 per append. 1 pays for
-the write, and 2 are saved to pay for copying this item and one older item at the next
-doubling.) Growing by a fixed amount instead of doubling would make the total Θ(*n*²).
+Why appends are O(1) amortized with doubling: starting at capacity 4, n appends copy
+4 + 8 + 16 + ... + n < 2n elements in total during resizes. Add the n normal writes and it's less
+than 3n work overall, so O(1) per append on average. Another way to think about it is to charge
+3 units per append: 1 for writing it, and 2 saved up to pay for copying it and one older element
+at the next resize. If the array grew by a fixed amount instead of doubling, the total would be
+O(n²).
 
-**Why shrink at ¼, not ½.** If the array halved as soon as it fell to ½ full, then alternating
-`append` and `pop` right at a size boundary would resize, and copy everything, on *every*
-operation. Shrinking at ¼ full to ½ capacity leaves the array half full after any resize, so at
-least *n*/4 operations must happen before the next one. That keeps every operation O(1)
-amortized and also guarantees the array is never less than ¼ full, so the space stays Θ(*n*).
+Why shrink at 1/4 and not 1/2: if the array halved as soon as it was half empty, then
+alternating append/pop right at the boundary would resize (and copy everything) on every single
+operation. Shrinking at 1/4 full down to half capacity leaves the array half full after any
+resize, so at least n/4 operations have to happen before the next resize. That keeps everything
+O(1) amortized and the array is never less than 1/4 full, so space stays O(n).
 
-**Why `pop_back` is O(*n*) on a singly linked list.** To remove the tail you have to set the
-second-to-last node's `next` to `None`. The only way to find that node is to walk from the head.
-A doubly linked list (with a `prev` pointer) makes it O(1), at the cost of one more pointer per
-node. That's also why `LinkedQueue` dequeues from the head and enqueues at the tail, not the
-other way round.
+Why `pop_back` is O(n) on a singly linked list: to remove the tail you need to set the
+second-to-last node's `nxt` to None, and the only way to find that node is to walk from the
+head. A doubly linked list fixes this with a `prev` pointer, at the cost of one more pointer per
+node. It's also why `NodeQueue` removes from the head and adds at the tail and not the other way
+around.
 
-## 6. Arrays vs linked lists for stacks and queues
+### 6. Arrays vs linked lists for stacks and queues
 
-![Data structure benchmarks](results/ds_operations.png)
+![Fig 6](results/fig6_structures.png)
 
-### Stacks (D1: *n* pushes then *n* pops)
+**Stacks** (B1: push n, then pop n)
 
-| *n* | `ArrayStack` | `LinkedStack` | Python `list` |
+| n | ArrStack | NodeStack | list (built-in) |
 |---:|---:|---:|---:|
-| 1,000 | 110 ns/op | 121 ns/op | 22 ns/op |
-| 100,000 | 121 ns/op | 132 ns/op | 23 ns/op |
+| 1,000 | 113 ns/op | 123 ns/op | 23 ns/op |
+| 100,000 | 121 ns/op | 130 ns/op | 24 ns/op |
 
-Both stacks are flat (O(1) per operation) and **practically tied** in time. The differences are
-elsewhere:
+Both are flat (O(1) per operation) and pretty much tied on speed. The differences are in other
+places:
 
-* **Worst case for a single operation.** A linked stack's push is O(1) every time. An array
-  stack's push is O(1) amortized, but the push that triggers a resize copies the whole stack.
-  That matters if a latency spike is unacceptable (for example an interrupt handler), and not
-  otherwise.
-* **Memory** (D6): **10.5 bytes per item** for the array-based structures vs **48 bytes** for
-  linked ones, about 4.6×. Each `Node` is a full Python object (16-byte header, 16-byte GC
-  header, two 8-byte slots). An array slot is one 8-byte pointer, plus unused capacity (at
-  *n* = 100,000 the block has 131,072 slots, 76% full, so 8 / 0.76 ≈ 10.5).
-* **Cache locality.** An array's slots sit next to each other in memory, while nodes are
-  scattered across the heap. In Python, interpreter overhead hides this. In C, walking an array
-  is often 5–10× faster than walking a linked list of the same length for this reason alone.
-* The built-in `list` is 5× faster than either, only because its push and pop run in C. It's
-  an array stack under the hood.
+- Worst case for one operation: NodeStack's push is always O(1). ArrStack's is O(1) amortized,
+  but the push that triggers a resize copies everything. That only matters if you can't afford
+  an occasional slow operation, like in an interrupt handler.
+- Memory (B6): 10.5 bytes per item for the array versions vs 48 bytes for the linked versions,
+  about 4.6x more. A `ListNode` is a whole Python object (object header, GC header and two
+  pointer slots). An array slot is a single 8-byte pointer, plus some empty capacity (at
+  n = 100,000 the block has 131,072 slots and is 76% full, so 8 / 0.76 ≈ 10.5).
+- Cache behaviour: array slots are next to each other in memory, linked nodes are spread around
+  the heap. In Python the interpreter overhead hides this, but in C walking an array is often
+  several times faster than walking a linked list just because of that.
+- The built-in list is about 5x faster than both, but only because it's written in C. Internally
+  it's an array stack, same idea as ArrStack.
 
-### Queues (D2: *n* enqueues then *n* dequeues)
+**Queues** (B2: enqueue n, then dequeue n)
 
-| *n* | `ArrayQueue` (ring) | `LinkedQueue` | `list` + `pop(0)` | `collections.deque` |
+| n | RingQueue | NodeQueue | list.pop(0) | deque (built-in) |
 |---:|---:|---:|---:|---:|
-| 1,000 | 190 ns/op | 136 ns/op | 66 ns/op | 22 ns/op |
-| 10,000 | 212 ns/op | 133 ns/op | 393 ns/op | 23 ns/op |
-| 100,000 | 205 ns/op | 139 ns/op | **6,311 ns/op** | 24 ns/op |
+| 1,000 | 192 ns/op | 138 ns/op | 66 ns/op | 23 ns/op |
+| 10,000 | 214 ns/op | 135 ns/op | 392 ns/op | 23 ns/op |
+| 100,000 | 205 ns/op | 138 ns/op | 6,104 ns/op | 24 ns/op |
 
-* **The naive array queue is quadratic.** `list.pop(0)` shifts every remaining item down by one
-  slot, so dequeue is O(*n*), and 100,000 operations take 0.63 s instead of 20 ms. At small *n*
-  it looks fast because the shift is a C `memmove`, but its cost per operation grows linearly
-  (66 → 393 → 6,311 ns). The circular buffer fixes this completely: head and tail both just move
-  forward and wrap around, and nothing ever shifts.
-* **Ring vs linked.** Both are flat, but here the linked queue is ~1.5× faster. In Python the
-  ring pays for a `%` and a `len()` on every operation, while the linked queue only rewires a
-  pointer. In C the ring would usually win, because of locality and because it never allocates
-  per item. It also uses 4.6× less memory either way.
-* **`collections.deque`** is fastest. It's a doubly linked list of 64-slot arrays written in C,
-  a hybrid that gets O(1) at both ends, never shifts, and keeps the memory overhead of an array
-  (8.3 bytes per item). It's what you should use for a queue in real Python code.
+- Using a plain list with `pop(0)` as a queue is quadratic. Every dequeue moves all the
+  remaining elements down one slot, so it's O(n) each, and 100,000 operations took 0.61 s
+  instead of about 20 ms. For small n it looks fast because the shifting is a C `memmove`, but
+  the cost per operation keeps growing (66, 392, 6,104 ns). The circular buffer fixes this,
+  since the front and back indexes just move forward and wrap around.
+- Ring vs linked: both flat, but in Python the linked one is about 1.5x faster. The ring buffer
+  has to do a `%` and a `len()` every time, while the linked queue just changes a couple of
+  pointers. In C I'd expect the ring buffer to win (better locality, no allocation per item),
+  and it uses 4.6x less memory either way.
+- `collections.deque` is the fastest. It's a doubly linked list of 64-slot blocks written in C,
+  so it gets O(1) at both ends with no shifting and still has array-like memory use (8.3 bytes
+  per item). That's what I'd actually use for a queue in Python.
 
-### Trade-off summary
+**Summary of the trade-offs**
 
-| | Array-based | Linked |
+| | array based | linked |
 |---|---|---|
-| Time per push/pop/enqueue/dequeue | O(1) amortized | O(1) worst case |
-| Memory per item (measured) | ~8–16 bytes (one pointer + spare capacity) | 48 bytes (a node object) |
-| Locality | contiguous: cache- and prefetch-friendly | scattered: a cache miss per node in C |
-| Allocation | rare, but each resize is a big copy | one small allocation per push |
-| Maximum size | must grow (or be fixed in advance) | limited only by memory |
-| Ease of implementation | stack trivial; queue needs the wrap-around arithmetic | both trivial, but pointer bugs (forgetting to update `tail`) are easy to make |
+| push/pop/enqueue/dequeue | O(1) amortized | O(1) always |
+| memory per item (measured) | ~8-16 bytes | 48 bytes |
+| locality | contiguous, cache friendly | scattered |
+| allocation | rare, but each resize copies everything | one small allocation per item |
+| max size | has to grow (or be fixed up front) | only limited by memory |
+| ease of implementation | stack is trivial, queue needs the wrap-around math | both easy, but it's easy to forget to update tail |
 
-## 7. Comparing structures in specific scenarios
+### 7. Other scenarios
 
-**Inserting at the front (D3).** `DynamicArray.insert(0, x)` shifts all *n* items, so *n* front
-inserts cost Θ(*n*²). At *n* = 8,000 that takes 525 ms (65,683 ns per insert, still rising),
-versus 0.77 ms (96 ns, flat) for `SinglyLinkedList.push_front`. That's **~690× slower**. Even
-CPython's C `list.insert(0)` is O(*n*) per insert: its cost per operation goes 30 → 376 ns, and
-it falls behind the pure-Python linked list once *n* passes ~2,000.
+**Inserting at the front (B3).** `ResizableArray.insert(0, x)` shifts all n elements, so n
+inserts take O(n²). At n = 8,000 that was 507 ms (63,413 ns per insert and still going up),
+compared to 0.78 ms (98 ns, flat) for `LinkedList.add_front`, about 650 times slower. Even the
+C version, `list.insert(0)`, is O(n) per insert: it went from 32 to 384 ns per operation and was
+slower than my Python linked list once n got past about 2,000.
 
-**Reading by index (D4).** The opposite result. `DynamicArray[i]` is a flat ~60 ns, while
-`SinglyLinkedList.get(i)` has to walk *i* nodes: 14,721 ns per read at *n* = 8,000, **~250×
-slower**, and growing linearly. Any algorithm that needs random access (binary search, heaps,
-selection from Part 1, hashing) must use an array.
+**Looking up by index (B4).** Here it's the other way around. `ResizableArray[i]` stays at about
+67 ns, but `LinkedList.get(i)` has to walk i nodes: 35,608 ns per lookup at n = 8,000, roughly
+520 times slower, and it keeps growing with n. Anything that needs random access (binary search,
+heaps, hashing, the selection algorithms from part 1) needs an array.
 
-**Appending at the back (D5).** Both are O(1): ~65 ns for the array (amortized) and ~100 ns for
-the list (tail pointer). The array is faster because it doesn't create a new object per item.
+**Appending (B5).** Both O(1): about 65-70 ns for the array (amortized) and about 100 ns for the
+linked list. The array is faster because it doesn't create a new object for every element.
 
-**Memory (D6).** Array-based: 10.5 bytes per item. Linked: 48 bytes. `list` / `deque`: 8.0 / 8.3
-bytes. When storing millions of small items, linked structures in Python cost several times more
-memory than the data itself.
+**Memory (B6).** Array based: 10.5 bytes per item. Linked: 48 bytes. Built-in list/deque: 8.0 /
+8.3 bytes. If you're storing millions of small values, a linked structure in Python can use way
+more memory than the data itself.
 
-**Matrices.** Row-major storage makes `m[r, c]` O(1), and walking a row touches consecutive
-slots. Changing the shape is O(*rc*), so matrices suit data whose shape is fixed (images,
-adjacency matrices, linear algebra). `__matmul__` loops in i-k-j order so the inner loop walks
-both `b` and the output along rows. That's the cache-friendly order for row-major data.
+**Matrices.** Storing row by row makes `m[r, c]` O(1) and going along a row reads consecutive
+slots. Changing the shape is O(rc), so it's best for data with a fixed shape like images,
+adjacency matrices and linear algebra. In `__matmul__` I used the i-k-j loop order so the inner
+loop goes along rows of both B and the result, which is the cache friendly order for row-major
+storage.
 
-## 8. Practical applications
+### 8. Where these get used in practice
 
-| Structure | Where it's used | Why that structure |
+| structure | examples | why |
 |---|---|---|
-| **Arrays / dynamic arrays** | Python `list`, C++ `vector`, Java `ArrayList`; the backing store for binary heaps, hash tables and strings; lookup tables; buffers | O(1) indexing, compact, cache-friendly; most data is mostly appended and read |
-| **Matrices** | Images (pixel grids), graph adjacency matrices, spreadsheets, game boards, ML tensors (NumPy is row-major by default) | O(1) access by (row, col); contiguous rows for fast scans and vectorized math |
-| **Stacks** | Function call stack; undo/redo; browser back button; expression evaluation and parsing (shunting-yard, balanced brackets); depth-first search; backtracking | The last thing started is the first thing finished |
-| **Queues** | Breadth-first search; OS schedulers and print spoolers; message queues between producers and consumers; web server request queues; network packet buffers | Fair first-come-first-served order |
-| **Circular buffers** | Audio/video streaming, keyboard input buffers, logging the last *N* events, NIC ring buffers in the kernel | Fixed memory, no allocation, O(1) both ends |
-| **Linked lists** | LRU caches (hash map + doubly linked list: O(1) move-to-front); memory allocator free lists; adjacency lists for sparse graphs; separate chaining in hash tables; the Linux kernel's `list_head`; immutable lists in functional languages | O(1) splicing given a node, stable node addresses, no big resize copies |
-| **Rooted trees (LCRS)** | File systems, the HTML DOM, org charts, parse/syntax trees, scene graphs, decision trees | Natural hierarchy with any number of children. LCRS gives every node a fixed size |
+| arrays / dynamic arrays | Python list, C++ vector, Java ArrayList, the storage under heaps, hash tables and strings, lookup tables | O(1) indexing, compact, cache friendly |
+| matrices | images, adjacency matrices, spreadsheets, game boards, NumPy arrays | O(1) access by row and column, fast row scans |
+| stacks | the function call stack, undo/redo, browser back button, checking brackets, evaluating expressions, DFS, backtracking | last in, first out |
+| queues | BFS, CPU schedulers, print queues, message queues, web server request queues | first come, first served |
+| circular buffers | audio/video streaming, keyboard buffers, keeping the last N log lines, network card buffers | fixed memory, no allocation |
+| linked lists | LRU cache (hash map + doubly linked list), free lists in memory allocators, adjacency lists for sparse graphs, hash table chaining, Linux kernel lists | O(1) insert/remove when you already have the node, no big resizes |
+| rooted trees | file systems, HTML DOM, org charts, parse trees, decision trees | natural hierarchy with any number of children |
 
-**When to prefer which:**
+When to pick which:
 
-* **Speed of lookup by position → array.** O(1) vs O(*n*); D4 showed ~250× at only 8,000 items.
-* **Frequent insert or delete at the front or middle, given a pointer to the spot → linked
-  list.** O(1) splice vs O(*n*) shift; D3 showed ~690×. If you'd have to *search* for the spot
-  first, that walk is O(*n*) and the linked list's advantage disappears.
-* **Memory usage → array.** About 4.6× less here, and no per-item allocation.
-* **Predictable per-operation latency → linked** (no resize spikes), or a fixed-capacity ring
-  buffer.
-* **Ease of implementation → array for stacks** (two lines), **linked for queues** if you want
-  to avoid the wrap-around arithmetic. In production Python, use `list` for stacks and
-  `collections.deque` for queues: they're the same designs written in C.
-* **Queue on top of an array → never `list.pop(0)`.** Use a circular buffer or a deque.
+- If you need to look things up by position, use an array. B4 showed a 520x difference with
+  just 8,000 items.
+- If you insert or delete a lot at the front or in the middle and already have a reference to
+  the spot, a linked list is better (B3: about 650x). If you'd have to search for the spot first,
+  that walk is O(n) anyway and the advantage mostly goes away.
+- For memory, arrays win, about 4.6x less in my measurements, with no per-item allocation.
+- If you need every operation to be predictably fast, go with linked (no resize spikes) or a
+  fixed-size ring buffer.
+- For ease of implementation, an array stack is the simplest thing possible. A linked queue
+  avoids the modulo math of a ring buffer. In real Python code I'd just use `list` as a stack and
+  `collections.deque` as a queue, since they're these same ideas written in C.
+- Never build a queue on `list.pop(0)`.
 
 ---
 
-## 9. Conclusions
+## 9. Conclusion
 
-* **Selection in linear time works as the theory says.** Both median of medians and
-  randomized quickselect showed flat time per item and comparisons per item from 1,000 to
-  200,000 items on random, sorted, reverse-sorted and duplicate-heavy inputs. Quickselect's
-  measured mean of 3.403*n* items examined matched Knuth's 2*n*(1 + ln 2) = 3.386*n* to within
-  0.5%, and followed his formula across all *k*.
-* **Worst-case vs expected-case shows up as variance, not average speed.** Median of medians
-  is guaranteed and very consistent (sd 0.48*n*), but costs ~2× the comparisons and is 3.0–4.5×
-  slower. Quickselect is faster on average but varies 3.3× more. A fixed pivot really is
-  quadratic on sorted input (exactly 3*n*²/8).
-* **Three-way partitioning** is what makes the deterministic guarantee hold with duplicates,
-  and it made few-unique inputs the cheapest case for both algorithms instead of a bad one.
-* **Constant factors matter in practice.** C's O(*n* log *n*) Timsort beat both pure-Python
-  O(*n*) selections at every size tested, even though its per-item cost grows and theirs doesn't.
-* **Arrays vs linked lists is a trade between access patterns.** Arrays win at indexing (~250×),
-  appending and memory (4.6× smaller). Linked lists win at inserting at the front (~690×). For
-  stacks the two are tied. For queues, the naive array version is quadratic, and both the ring
-  buffer and the linked queue fix it.
+- Both linear-time selection algorithms behaved the way the theory says. Time per element and
+  comparisons per element stayed flat from 1,000 to 200,000 elements on random, sorted,
+  reversed and duplicate-heavy input. Quickselect's average of 3.377n elements touched at the
+  median was within 0.3% of Knuth's 3.386n, and it followed his formula for other values of k too.
+- The difference between a worst-case and an expected-case guarantee showed up mostly as
+  variance. Median of medians was very consistent (sd 0.64n) but used about twice as many
+  comparisons and was usually 3-4.5x slower. Quickselect was faster on average but its spread
+  was 2.4x wider. The last-pivot version really is quadratic on sorted input (exactly 3n²/8).
+- The three-way partition is what keeps median of medians linear when there are duplicates, and
+  it turned the few-distinct-values case into the fastest case instead of a slow one.
+- Constant factors matter. C's O(n log n) Timsort still beat both pure-Python O(n) algorithms at
+  every size I tested.
+- Arrays vs linked lists comes down to the access pattern. Arrays were much better for index
+  lookups (~520x), appends and memory (4.6x smaller). Linked lists were much better for inserting
+  at the front (~650x). For stacks they were basically tied. For queues the naive array version
+  is quadratic, and both the ring buffer and the linked queue fix that.
 
 ## 10. References
 
-* Blum, M., Floyd, R. W., Pratt, V., Rivest, R. L., & Tarjan, R. E. (1973). Time bounds for
-  selection. *Journal of Computer and System Sciences, 7*(4), 448–461.
-* Cormen, T. H., Leiserson, C. E., Rivest, R. L., & Stein, C. (2022). *Introduction to
-  algorithms* (4th ed.). MIT Press. Chapters 9 (Medians and Order Statistics) and 10
-  (Elementary Data Structures); §16.4 (Dynamic tables, amortized analysis).
-* Dijkstra, E. W. (1976). *A discipline of programming*. Prentice-Hall. (Dutch national flag
-  problem.)
-* Hoare, C. A. R. (1961). Algorithm 65: Find. *Communications of the ACM, 4*(7), 321–322.
-* Knuth, D. E. (1971). Mathematical analysis of algorithms. *Proceedings of IFIP Congress 71*,
-  19–27.
-* Musser, D. R. (1997). Introspective sorting and selection algorithms. *Software: Practice
-  and Experience, 27*(8), 983–993.
-* Python Software Foundation. (2024). *collections — Container datatypes: deque*.
-  https://docs.python.org/3/library/collections.html#collections.deque
+- Blum, M., Floyd, R. W., Pratt, V., Rivest, R. L., & Tarjan, R. E. (1973). Time bounds for
+  selection. *Journal of Computer and System Sciences, 7*(4), 448-461.
+- Cormen, T. H., Leiserson, C. E., Rivest, R. L., & Stein, C. (2022). *Introduction to
+  algorithms* (4th ed.). MIT Press. Ch. 9 and 10, and section 16.4 on dynamic tables.
+- Dijkstra, E. W. (1976). *A discipline of programming*. Prentice-Hall.
+- Hoare, C. A. R. (1961). Algorithm 65: Find. *Communications of the ACM, 4*(7), 321-322.
+- Knuth, D. E. (1971). Mathematical analysis of algorithms. *Proceedings of IFIP Congress 71*,
+  19-27.
+- Musser, D. R. (1997). Introspective sorting and selection algorithms. *Software: Practice and
+  Experience, 27*(8), 983-993.
+- Python Software Foundation. *collections - Container datatypes*.
+  https://docs.python.org/3/library/collections.html

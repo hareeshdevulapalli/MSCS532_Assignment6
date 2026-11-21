@@ -1,137 +1,131 @@
-"""Unit tests for data_structures.py.  python3 -m unittest -v test_data_structures"""
+# Tests for data_structures.py
+# run:  python3 -m unittest -v test_data_structures
 
 import random
 import unittest
 
-from data_structures import (ArrayQueue, ArrayStack, DynamicArray, LinkedQueue,
-                             LinkedStack, Matrix, RootedTree, SinglyLinkedList)
+from data_structures import (ArrStack, GeneralTree, LinkedList, Matrix,
+                             NodeQueue, NodeStack, ResizableArray, RingQueue)
 
 
-class TestDynamicArray(unittest.TestCase):
+class ResizableArrayTests(unittest.TestCase):
 
-    def test_append_access_and_growth(self):
-        a = DynamicArray()
+    def test_append_get_set(self):
+        arr = ResizableArray()
         for i in range(100):
-            a.append(i * i)
-        self.assertEqual(len(a), 100)
-        self.assertEqual(a[0], 0)
-        self.assertEqual(a[99], 99 * 99)
-        self.assertEqual(a[-1], 99 * 99)
-        self.assertGreaterEqual(a.capacity, 100)
-        self.assertEqual(a.capacity & (a.capacity - 1), 0)  # grew by doubling
-        a[5] = "five"
-        self.assertEqual(a[5], "five")
+            arr.append(i * i)
+        self.assertEqual(len(arr), 100)
+        self.assertEqual(arr[0], 0)
+        self.assertEqual(arr[99], 9801)
+        self.assertEqual(arr[-1], 9801)
+        self.assertGreaterEqual(arr.capacity, 100)
+        # capacity should be a power of two since it only ever doubles
+        self.assertEqual(arr.capacity & (arr.capacity - 1), 0)
+        arr[5] = "five"
+        self.assertEqual(arr[5], "five")
 
-    def test_insert_and_delete_match_python_list(self):
-        rng = random.Random(1)
-        a, ref = DynamicArray(), []
+    def test_insert_remove_vs_python_list(self):
+        r = random.Random(1)
+        arr, ref = ResizableArray(), []
         for _ in range(2000):
-            if ref and rng.random() < 0.45:
-                i = rng.randrange(len(ref))
-                self.assertEqual(a.delete(i), ref.pop(i))
+            if ref and r.random() < 0.45:
+                i = r.randrange(len(ref))
+                self.assertEqual(arr.remove_at(i), ref.pop(i))
             else:
-                i = rng.randint(0, len(ref))
-                v = rng.randint(0, 99)
-                a.insert(i, v)
+                i = r.randint(0, len(ref))
+                v = r.randint(0, 99)
+                arr.insert(i, v)
                 ref.insert(i, v)
-            self.assertEqual(list(a), ref)
+            self.assertEqual(list(arr), ref)
 
-    def test_shrinks_after_many_deletes(self):
-        a = DynamicArray(range(1024))
-        big = a.capacity
-        while len(a) > 3:
-            a.pop()
-        self.assertLess(a.capacity, big)
-        self.assertEqual(list(a), [0, 1, 2])
+    def test_gives_memory_back(self):
+        arr = ResizableArray(range(1024))
+        before = arr.capacity
+        while len(arr) > 3:
+            arr.pop()
+        self.assertLess(arr.capacity, before)
+        self.assertEqual(list(arr), [0, 1, 2])
 
-    def test_search_and_remove(self):
-        a = DynamicArray([4, 8, 15, 16, 23, 42])
-        self.assertEqual(a.index_of(16), 3)
-        self.assertEqual(a.index_of(99), -1)
-        self.assertIn(23, a)
-        a.remove(15)
-        self.assertEqual(list(a), [4, 8, 16, 23, 42])
-        with self.assertRaises(ValueError):
-            a.remove(15)
+    def test_find_and_remove(self):
+        arr = ResizableArray([4, 8, 15, 16, 23, 42])
+        self.assertEqual(arr.find(16), 3)
+        self.assertEqual(arr.find(99), -1)
+        self.assertIn(23, arr)
+        arr.remove(15)
+        self.assertEqual(list(arr), [4, 8, 16, 23, 42])
+        self.assertRaises(ValueError, arr.remove, 15)
 
     def test_errors(self):
-        a = DynamicArray([1, 2])
-        with self.assertRaises(IndexError):
-            a[2]
-        with self.assertRaises(IndexError):
-            a.insert(5, 0)
-        with self.assertRaises(IndexError):
-            a.delete(-3)
-        with self.assertRaises(IndexError):
-            DynamicArray().pop()
+        arr = ResizableArray([1, 2])
+        self.assertRaises(IndexError, lambda: arr[2])
+        self.assertRaises(IndexError, arr.insert, 5, 0)
+        self.assertRaises(IndexError, arr.remove_at, -3)
+        self.assertRaises(IndexError, ResizableArray().pop)
 
 
-class TestMatrix(unittest.TestCase):
+class MatrixTests(unittest.TestCase):
 
-    def test_access_and_shape(self):
-        m = Matrix(2, 3, fill=0)
+    def test_get_set(self):
+        m = Matrix(2, 3)
         m[1, 2] = 9
         self.assertEqual(m[1, 2], 9)
         self.assertEqual(m.shape, (2, 3))
-        with self.assertRaises(IndexError):
-            m[2, 0]
+        self.assertRaises(IndexError, lambda: m[2, 0])
 
-    def test_row_and_column_insert_delete(self):
-        m = Matrix.from_lists([[1, 2], [3, 4]])
-        m.insert_row(1, [9, 9])
-        self.assertEqual(m.to_lists(), [[1, 2], [9, 9], [3, 4]])
-        m.insert_col(2, [7, 7, 7])
-        self.assertEqual(m.to_lists(), [[1, 2, 7], [9, 9, 7], [3, 4, 7]])
-        self.assertEqual(m.delete_row(1), [9, 9, 7])
-        self.assertEqual(m.delete_col(0), [1, 3])
-        self.assertEqual(m.to_lists(), [[2, 7], [4, 7]])
-        with self.assertRaises(ValueError):
-            m.insert_row(0, [1, 2, 3])
+    def test_rows_and_columns(self):
+        m = Matrix.from_rows([[1, 2], [3, 4]])
+        m.add_row(1, [9, 9])
+        self.assertEqual(m.as_rows(), [[1, 2], [9, 9], [3, 4]])
+        m.add_col(2, [7, 7, 7])
+        self.assertEqual(m.as_rows(), [[1, 2, 7], [9, 9, 7], [3, 4, 7]])
+        self.assertEqual(m.drop_row(1), [9, 9, 7])
+        self.assertEqual(m.drop_col(0), [1, 3])
+        self.assertEqual(m.as_rows(), [[2, 7], [4, 7]])
+        self.assertRaises(ValueError, m.add_row, 0, [1, 2, 3])
 
-    def test_build_from_empty(self):
+    def test_start_empty(self):
         m = Matrix(0, 0)
-        m.insert_row(0, [1, 2, 3])
-        m.insert_row(1, [4, 5, 6])
-        self.assertEqual(m.to_lists(), [[1, 2, 3], [4, 5, 6]])
+        m.add_row(0, [1, 2, 3])
+        m.add_row(1, [4, 5, 6])
+        self.assertEqual(m.as_rows(), [[1, 2, 3], [4, 5, 6]])
 
-    def test_arithmetic(self):
-        a = Matrix.from_lists([[1, 2, 3], [4, 5, 6]])
-        b = Matrix.from_lists([[7, 8], [9, 10], [11, 12]])
-        self.assertEqual((a @ b).to_lists(), [[58, 64], [139, 154]])
-        self.assertEqual(a.transpose().to_lists(), [[1, 4], [2, 5], [3, 6]])
-        self.assertEqual((a + a).to_lists(), [[2, 4, 6], [8, 10, 12]])
+    def test_math(self):
+        a = Matrix.from_rows([[1, 2, 3], [4, 5, 6]])
+        b = Matrix.from_rows([[7, 8], [9, 10], [11, 12]])
+        self.assertEqual((a @ b).as_rows(), [[58, 64], [139, 154]])
+        self.assertEqual(a.transposed().as_rows(), [[1, 4], [2, 5], [3, 6]])
+        self.assertEqual((a + a).as_rows(), [[2, 4, 6], [8, 10, 12]])
         self.assertEqual(a @ Matrix.identity(3), a)
-        with self.assertRaises(ValueError):
-            a @ a
+        self.assertRaises(ValueError, lambda: a @ a)
 
 
-class StackContract:
-    make = None
+class StackChecks:
+    factory = None
 
-    def test_lifo(self):
-        s = self.make()
+    def test_last_in_first_out(self):
+        s = self.factory()
         self.assertTrue(s.is_empty())
         for i in range(1000):
             s.push(i)
         self.assertEqual(len(s), 1000)
         self.assertEqual(s.peek(), 999)
-        self.assertEqual([s.pop() for _ in range(1000)], list(range(999, -1, -1)))
+        popped = [s.pop() for _ in range(1000)]
+        self.assertEqual(popped, list(range(999, -1, -1)))
         self.assertTrue(s.is_empty())
-        with self.assertRaises(IndexError):
-            s.pop()
-        with self.assertRaises(IndexError):
-            s.peek()
+        self.assertRaises(IndexError, s.pop)
+        self.assertRaises(IndexError, s.peek)
 
 
-class QueueContract:
-    make = None
+class QueueChecks:
+    factory = None
 
-    def test_fifo_with_wraparound(self):
-        q = self.make()
+    def test_first_in_first_out(self):
+        q = self.factory()
         ref = []
-        rng = random.Random(2)
-        for i in range(3000):        # mixed ops so the ring wraps many times
-            if ref and rng.random() < 0.5:
+        r = random.Random(2)
+        # mix enqueues and dequeues so the ring wraps around a lot
+        for i in range(3000):
+            if ref and r.random() < 0.5:
                 self.assertEqual(q.dequeue(), ref.pop(0))
             else:
                 q.enqueue(i)
@@ -142,42 +136,40 @@ class QueueContract:
         while ref:
             self.assertEqual(q.dequeue(), ref.pop(0))
         self.assertTrue(q.is_empty())
-        with self.assertRaises(IndexError):
-            q.dequeue()
-        with self.assertRaises(IndexError):
-            q.peek()
+        self.assertRaises(IndexError, q.dequeue)
+        self.assertRaises(IndexError, q.peek)
 
 
-class TestArrayStack(StackContract, unittest.TestCase):
-    make = ArrayStack
+class ArrStackTests(StackChecks, unittest.TestCase):
+    factory = ArrStack
 
 
-class TestLinkedStack(StackContract, unittest.TestCase):
-    make = LinkedStack
+class NodeStackTests(StackChecks, unittest.TestCase):
+    factory = NodeStack
 
 
-class TestArrayQueue(QueueContract, unittest.TestCase):
-    make = staticmethod(lambda: ArrayQueue(capacity=2))
+class RingQueueTests(QueueChecks, unittest.TestCase):
+    factory = staticmethod(lambda: RingQueue(cap=2))
 
-    def test_ring_does_not_grow_when_it_does_not_need_to(self):
-        q = ArrayQueue(capacity=4)
+    def test_no_growth_when_not_needed(self):
+        q = RingQueue(cap=4)
         for i in range(1000):
             q.enqueue(i)
             q.dequeue()
-        self.assertEqual(len(q._data), 4)
+        self.assertEqual(len(q._slots), 4)
 
 
-class TestLinkedQueue(QueueContract, unittest.TestCase):
-    make = LinkedQueue
+class NodeQueueTests(QueueChecks, unittest.TestCase):
+    factory = NodeQueue
 
 
-class TestSinglyLinkedList(unittest.TestCase):
+class LinkedListTests(unittest.TestCase):
 
-    def test_front_and_back(self):
-        ll = SinglyLinkedList()
-        ll.push_back(2)
-        ll.push_front(1)
-        ll.push_back(3)
+    def test_both_ends(self):
+        ll = LinkedList()
+        ll.add_back(2)
+        ll.add_front(1)
+        ll.add_back(3)
         self.assertEqual(ll.to_list(), [1, 2, 3])
         self.assertEqual(ll.pop_back(), 3)
         self.assertEqual(ll.pop_front(), 1)
@@ -185,96 +177,90 @@ class TestSinglyLinkedList(unittest.TestCase):
         self.assertTrue(ll.is_empty())
         self.assertIsNone(ll.head)
         self.assertIsNone(ll.tail)
-        with self.assertRaises(IndexError):
-            ll.pop_front()
+        self.assertRaises(IndexError, ll.pop_front)
 
-    def test_random_ops_match_python_list(self):
-        rng = random.Random(3)
-        ll, ref = SinglyLinkedList(), []
+    def test_random_ops_vs_python_list(self):
+        r = random.Random(3)
+        ll, ref = LinkedList(), []
         for _ in range(2000):
-            r = rng.random()
-            if ref and r < 0.3:
-                i = rng.randrange(len(ref))
-                self.assertEqual(ll.delete(i), ref.pop(i))
-            elif ref and r < 0.4:
-                v = rng.choice(ref)
-                ll.remove(v)
+            x = r.random()
+            if ref and x < 0.3:
+                i = r.randrange(len(ref))
+                self.assertEqual(ll.remove_at(i), ref.pop(i))
+            elif ref and x < 0.4:
+                v = r.choice(ref)
+                ll.remove_value(v)
                 ref.remove(v)
             else:
-                i = rng.randint(0, len(ref))
-                v = rng.randint(0, 50)
-                ll.insert(i, v)
+                i = r.randint(0, len(ref))
+                v = r.randint(0, 50)
+                ll.insert_at(i, v)
                 ref.insert(i, v)
             self.assertEqual(ll.to_list(), ref)
             self.assertEqual(len(ll), len(ref))
-            # the tail pointer must always be right
-            if ref:
-                self.assertEqual(ll.tail.value, ref[-1])
-                self.assertIsNone(ll.tail.next)
+            if ref:   # tail pointer has to stay correct
+                self.assertEqual(ll.tail.val, ref[-1])
+                self.assertIsNone(ll.tail.nxt)
 
-    def test_search_traverse_reverse(self):
-        ll = SinglyLinkedList("abcde")
-        self.assertEqual(ll.find("c").value, "c")
+    def test_find_walk_reverse(self):
+        ll = LinkedList("abcde")
+        self.assertEqual(ll.find("c").val, "c")
         self.assertIsNone(ll.find("z"))
         self.assertEqual(ll.index_of("d"), 3)
         self.assertEqual(ll[-1], "e")
         seen = []
-        ll.traverse(seen.append)
+        ll.walk(seen.append)
         self.assertEqual(seen, list("abcde"))
         ll.reverse()
         self.assertEqual(ll.to_list(), list("edcba"))
-        ll.push_back("!")
+        ll.add_back("!")
         self.assertEqual(ll.to_list(), list("edcba!"))
-        node = ll.find("c")
-        ll.insert_after(node, "C")
+        ll.insert_after(ll.find("c"), "C")
         self.assertEqual(ll.to_list(), list("edcCba!"))
-        with self.assertRaises(ValueError):
-            ll.remove("zzz")
+        self.assertRaises(ValueError, ll.remove_value, "zzz")
 
 
-class TestRootedTree(unittest.TestCase):
+class TreeTests(unittest.TestCase):
 
     def setUp(self):
-        #        A
-        #      / | \
-        #     B  C  D
-        #    / \     \
-        #   E   F     G
-        #             |
-        #             H
-        self.t = RootedTree("A")
-        r = self.t.root
-        b = self.t.add_child(r, "B")
-        self.t.add_child(r, "C")
-        d = self.t.add_child(r, "D")
-        self.t.add_child(b, "E")
-        self.t.add_child(b, "F")
-        g = self.t.add_child(d, "G")
-        self.h = self.t.add_child(g, "H")
+        #         A
+        #       / | \
+        #      B  C  D
+        #     / \     \
+        #    E   F     G
+        #              |
+        #              H
+        t = GeneralTree("A")
+        b = t.add_child(t.root, "B")
+        t.add_child(t.root, "C")
+        d = t.add_child(t.root, "D")
+        t.add_child(b, "E")
+        t.add_child(b, "F")
+        g = t.add_child(d, "G")
+        self.h = t.add_child(g, "H")
+        self.t = t
 
-    def test_traversals(self):
+    def test_orders(self):
         self.assertEqual(self.t.preorder(), list("ABEFCDGH"))
-        self.assertEqual(self.t.level_order(), list("ABCDEFGH"))
+        self.assertEqual(self.t.bfs(), list("ABCDEFGH"))
 
-    def test_measures(self):
+    def test_sizes(self):
         self.assertEqual(len(self.t), 8)
         self.assertEqual(self.t.height(), 3)
         self.assertEqual(self.t.depth(self.h), 3)
-        self.assertEqual([c.value for c in self.t.children(self.t.root)],
-                         list("BCD"))
+        self.assertEqual([k.val for k in self.t.kids(self.t.root)], list("BCD"))
         self.assertTrue(self.t.is_leaf(self.h))
 
-    def test_find_and_remove(self):
+    def test_find_and_cut(self):
         d = self.t.find("D")
-        self.assertEqual(self.t.remove_subtree(d), 3)
+        self.assertEqual(self.t.cut(d), 3)
         self.assertEqual(self.t.preorder(), list("ABEFC"))
         self.assertEqual(len(self.t), 5)
         self.assertIsNone(self.t.find("H"))
-        with self.assertRaises(ValueError):
-            self.t.remove_subtree(self.t.root)
+        self.assertRaises(ValueError, self.t.cut, self.t.root)
 
-    def test_deep_tree_does_not_hit_recursion_limit(self):
-        t = RootedTree(0)
+    def test_very_deep_tree(self):
+        t = GeneralTree(0)
         node = t.root
         for i in range(1, 5000):
             node = t.add_child(node, i)

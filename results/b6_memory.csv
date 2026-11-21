@@ -1,0 +1,9 @@
+structure,n,bytes,bytes_per_item
+ResizableArray,100000,1048904,10.49
+ArrStack,100000,1048920,10.49
+RingQueue,100000,1048920,10.49
+LinkedList,100000,4800176,48.00
+NodeStack,100000,4800232,48.00
+NodeQueue,100000,4800224,48.00
+list (built-in),100000,800984,8.01
+deque (built-in),100000,825496,8.25

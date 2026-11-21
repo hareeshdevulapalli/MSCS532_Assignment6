@@ -1,0 +1,107 @@
+exp,structure,n,secs
+B1,ArrStack,1000,1.128330e-04
+B1,NodeStack,1000,1.233332e-04
+B1,list (built-in),1000,2.283417e-05
+B1,ArrStack,2000,2.303328e-04
+B1,NodeStack,2000,2.474594e-04
+B1,list (built-in),2000,4.466716e-05
+B1,ArrStack,5000,6.371671e-04
+B1,NodeStack,5000,6.247498e-04
+B1,list (built-in),5000,1.108339e-04
+B1,ArrStack,10000,1.253875e-03
+B1,NodeStack,10000,1.242959e-03
+B1,list (built-in),10000,2.216669e-04
+B1,ArrStack,20000,2.547667e-03
+B1,NodeStack,20000,2.487458e-03
+B1,list (built-in),20000,4.480421e-04
+B1,ArrStack,50000,6.046708e-03
+B1,NodeStack,50000,6.341709e-03
+B1,list (built-in),50000,1.125791e-03
+B1,ArrStack,100000,1.211621e-02
+B1,NodeStack,100000,1.303250e-02
+B1,list (built-in),100000,2.358708e-03
+B2,RingQueue,1000,1.924173e-04
+B2,NodeQueue,1000,1.379168e-04
+B2,list.pop(0),1000,6.595766e-05
+B2,deque (built-in),1000,2.258318e-05
+B2,RingQueue,2000,3.887918e-04
+B2,NodeQueue,2000,2.648751e-04
+B2,list.pop(0),2000,1.972080e-04
+B2,deque (built-in),2000,4.666718e-05
+B2,RingQueue,5000,1.062375e-03
+B2,NodeQueue,5000,6.715832e-04
+B2,list.pop(0),5000,1.021500e-03
+B2,deque (built-in),5000,1.213751e-04
+B2,RingQueue,10000,2.136000e-03
+B2,NodeQueue,10000,1.350459e-03
+B2,list.pop(0),10000,3.922458e-03
+B2,deque (built-in),10000,2.291249e-04
+B2,RingQueue,20000,4.303916e-03
+B2,NodeQueue,20000,2.696375e-03
+B2,list.pop(0),20000,1.836225e-02
+B2,deque (built-in),20000,4.807077e-04
+B2,RingQueue,50000,1.044388e-02
+B2,NodeQueue,50000,6.852291e-03
+B2,list.pop(0),50000,1.485909e-01
+B2,deque (built-in),50000,1.161292e-03
+B2,RingQueue,100000,2.053667e-02
+B2,NodeQueue,100000,1.383392e-02
+B2,list.pop(0),100000,6.104119e-01
+B2,deque (built-in),100000,2.415834e-03
+B3,ResizableArray,250,2.957918e-04
+B3,LinkedList,250,2.150005e-05
+B3,list.insert(0),250,8.082949e-06
+B3,ResizableArray,500,1.362959e-03
+B3,LinkedList,500,4.545785e-05
+B3,list.insert(0),500,2.012495e-05
+B3,ResizableArray,1000,6.499417e-03
+B3,LinkedList,1000,1.006667e-04
+B3,list.insert(0),1000,6.441632e-05
+B3,ResizableArray,2000,2.868729e-02
+B3,LinkedList,2000,1.932918e-04
+B3,list.insert(0),2000,2.127080e-04
+B3,ResizableArray,4000,1.232312e-01
+B3,LinkedList,4000,3.901673e-04
+B3,list.insert(0),4000,7.927916e-04
+B3,ResizableArray,8000,5.073005e-01
+B3,LinkedList,8000,7.822500e-04
+B3,list.insert(0),8000,3.073583e-03
+B4,ResizableArray,250,1.591677e-05
+B4,LinkedList,250,1.729159e-04
+B4,list (built-in),250,2.333894e-06
+B4,ResizableArray,500,3.470806e-05
+B4,LinkedList,500,7.994156e-04
+B4,list (built-in),500,5.166978e-06
+B4,ResizableArray,1000,6.583333e-05
+B4,LinkedList,1000,3.705917e-03
+B4,list (built-in),1000,8.708797e-06
+B4,ResizableArray,2000,1.327083e-04
+B4,LinkedList,2000,1.830833e-02
+B4,list (built-in),2000,1.516705e-05
+B4,ResizableArray,4000,2.671671e-04
+B4,LinkedList,4000,7.250404e-02
+B4,list (built-in),4000,3.116718e-05
+B4,ResizableArray,8000,5.419594e-04
+B4,LinkedList,8000,2.848617e-01
+B4,list (built-in),8000,5.337503e-05
+B5,ResizableArray,1000,6.083399e-05
+B5,LinkedList,1000,9.683287e-05
+B5,list (built-in),1000,1.233304e-05
+B5,ResizableArray,2000,1.218747e-04
+B5,LinkedList,2000,2.010418e-04
+B5,list (built-in),2000,2.766680e-05
+B5,ResizableArray,5000,3.486252e-04
+B5,LinkedList,5000,4.942911e-04
+B5,list (built-in),5000,6.162515e-05
+B5,ResizableArray,10000,6.865831e-04
+B5,LinkedList,10000,1.012625e-03
+B5,list (built-in),10000,1.220000e-04
+B5,ResizableArray,20000,1.408667e-03
+B5,LinkedList,20000,2.014000e-03
+B5,list (built-in),20000,2.474580e-04
+B5,ResizableArray,50000,3.249459e-03
+B5,LinkedList,50000,5.111708e-03
+B5,list (built-in),50000,6.451248e-04
+B5,ResizableArray,100000,6.756750e-03
+B5,LinkedList,100000,1.052013e-02
+B5,list (built-in),100000,1.409209e-03
