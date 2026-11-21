@@ -1,0 +1,9 @@
+structure,n,bytes,bytes_per_item
+DynamicArray,100000,1048904,10.49
+ArrayStack,100000,1048920,10.49
+ArrayQueue,100000,1048920,10.49
+SinglyLinkedList,100000,4800176,48.00
+LinkedStack,100000,4800232,48.00
+LinkedQueue,100000,4800224,48.00
+Python list,100000,800984,8.01
+collections.deque,100000,825496,8.25
